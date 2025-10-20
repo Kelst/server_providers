@@ -31,6 +31,7 @@ import {
   AdditionalServicesDto,
   FullUserDataDto,
 } from './dto/user-info.dto';
+import { FeesResponseDto } from './dto/fees.dto';
 
 @ApiTags('billing')
 @ApiBearerAuth('API-token')
@@ -174,5 +175,22 @@ export class BillingController {
     @Param('uid', ParseIntPipe) uid: number,
   ): Promise<FullUserDataDto> {
     return this.userDataService.getFullUserData(uid);
+  }
+
+  @Get('users/:uid/fees')
+  @ApiOperation({
+    summary: 'Get user fees/payments history',
+    description:
+      'Returns user payment history from fees table: count, total sum, and list of payments (up to 1000 most recent)',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'Fees data with statistics and payment history',
+    type: FeesResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getFees(@Param('uid', ParseIntPipe) uid: number): Promise<FeesResponseDto> {
+    return this.userDataService.getFees(uid);
   }
 }

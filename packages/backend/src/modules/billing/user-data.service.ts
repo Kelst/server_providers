@@ -11,6 +11,7 @@ import {
   AdditionalServicesDto,
   FullUserDataDto,
 } from './dto/user-info.dto';
+import { FeesResponseDto, FeeItemDto } from './dto/fees.dto';
 import { intToIp } from './helpers/ip.helper';
 import { convertDataFromDB, formatTime, getDifference } from './helpers/data.helper';
 import { processPhoneNumber, getLowestPriorityValue } from './helpers/phone.helper';
@@ -426,6 +427,61 @@ export class UserDataService {
       };
     } catch (error) {
       this.logger.error(`Error getting additional services for uid ${uid}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get user fees/payments history
+   */
+  async getFees(uid: number): Promise<FeesResponseDto> {
+    try {
+      // Query for statistics (count and total sum)
+      const statsSQL = `
+        SELECT
+          COUNT(*) as count,
+          COALESCE(SUM(sum), 0) as total_sum
+        FROM fees
+        WHERE uid = ?
+      `;
+
+      // Query for detailed fee records
+      const detailsSQL = `
+        SELECT
+          DATE_FORMAT(date, '%Y-%m-%d %H:%i:%s') as date,
+          dsc as description,
+          sum,
+          last_deposit as deposit
+        FROM fees
+        WHERE uid = ?
+        ORDER BY date DESC
+        LIMIT 1000
+      `;
+
+      // Execute both queries in parallel
+      const [statsResult, detailsResult] = await Promise.all([
+        this.mysqlService.query<any[]>(statsSQL, [uid]),
+        this.mysqlService.query<any[]>(detailsSQL, [uid]),
+      ]);
+
+      // Build response
+      const count = statsResult[0]?.count ? parseInt(statsResult[0].count, 10) : 0;
+      const sum = statsResult[0]?.total_sum ? parseFloat(statsResult[0].total_sum) : 0;
+
+      const paidData: FeeItemDto[] = detailsResult.map((row) => ({
+        date: row.date,
+        description: row.description || '',
+        sum: parseFloat(row.sum) || 0,
+        deposit: parseFloat(row.deposit) || 0,
+      }));
+
+      return {
+        count,
+        sum,
+        paidData,
+      };
+    } catch (error) {
+      this.logger.error(`Error getting fees for uid ${uid}:`, error);
       throw error;
     }
   }

@@ -1,5 +1,4 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
-import { PrismaService } from '../database/prisma.service';
 import { MySQLService } from './mysql.service';
 import { BillingLoginResponseDto } from './dto/billing-auth.dto';
 
@@ -22,7 +21,6 @@ export class BillingService {
   private readonly logger = new Logger(BillingService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
     private readonly mysqlService: MySQLService,
   ) {}
 
