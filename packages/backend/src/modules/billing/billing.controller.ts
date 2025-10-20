@@ -32,6 +32,9 @@ import {
   FullUserDataDto,
 } from './dto/user-info.dto';
 import { FeesResponseDto } from './dto/fees.dto';
+import { PaymentsResponseDto } from './dto/payments.dto';
+import { ReloadSessionResponseDto, ClearCidResponseDto } from './dto/session-reload.dto';
+import { AddCreditResponseDto } from './dto/credit.dto';
 
 @ApiTags('billing')
 @ApiBearerAuth('API-token')
@@ -179,9 +182,9 @@ export class BillingController {
 
   @Get('users/:uid/fees')
   @ApiOperation({
-    summary: 'Get user fees/payments history',
+    summary: 'Get user fees history (outgoing funds)',
     description:
-      'Returns user payment history from fees table: count, total sum, and list of payments (up to 1000 most recent)',
+      'Returns user fees/charges history from fees table: count, total sum, and list of fees (up to 1000 most recent)',
   })
   @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
   @ApiResponse({
@@ -192,5 +195,75 @@ export class BillingController {
   @ApiResponse({ status: 404, description: 'User not found' })
   async getFees(@Param('uid', ParseIntPipe) uid: number): Promise<FeesResponseDto> {
     return this.userDataService.getFees(uid);
+  }
+
+  @Get('users/:uid/payments')
+  @ApiOperation({
+    summary: 'Get user payments history (incoming funds)',
+    description:
+      'Returns user payments/deposits history from payments table: count, total sum, and list of payments (up to 1000 most recent)',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'Payments data with statistics and payment history',
+    type: PaymentsResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getPayments(@Param('uid', ParseIntPipe) uid: number): Promise<PaymentsResponseDto> {
+    return this.userDataService.getPayments(uid);
+  }
+
+  @Post('users/:uid/session/reload')
+  @ApiOperation({
+    summary: 'Reload user session (hangup)',
+    description:
+      'Schedules a session hangup for the user after 10 seconds. Also clears the user CID (MAC address) immediately. Protected from duplicate requests - only one reload job can be active at a time per user.',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'Session reload scheduled successfully or already in progress',
+    type: ReloadSessionResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Active session not found' })
+  async reloadSession(
+    @Param('uid', ParseIntPipe) uid: number,
+  ): Promise<ReloadSessionResponseDto> {
+    return this.billingService.reloadSession(uid);
+  }
+
+  @Post('users/:uid/cid/clear')
+  @ApiOperation({
+    summary: 'Clear user CID (MAC address)',
+    description:
+      'Clears the user CID (MAC address) in internet_main table and logs the action. Does NOT reload the session.',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'CID cleared successfully',
+    type: ClearCidResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async clearCid(@Param('uid', ParseIntPipe) uid: number): Promise<ClearCidResponseDto> {
+    return this.billingService.clearCid(uid);
+  }
+
+  @Post('users/:uid/credit/add')
+  @ApiOperation({
+    summary: 'Add credit to user account',
+    description:
+      'Sets credit for user (once per month limit). Credit amount: 4444 by default, or abs(balance) + 4444 if balance is negative. Credit is valid for 5 days. Automatically reloads session after 10 seconds. Login is fetched automatically from database.',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'Credit added successfully or validation error',
+    type: AddCreditResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Bad request (user not found, already has credit, etc.)' })
+  async addCredit(@Param('uid', ParseIntPipe) uid: number): Promise<AddCreditResponseDto> {
+    return this.billingService.addCredit(uid);
   }
 }

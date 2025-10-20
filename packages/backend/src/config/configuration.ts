@@ -21,4 +21,10 @@ export default () => ({
     database: process.env.ABILLS_DB_NAME,
     decodeKey: process.env.ABILLS_DB_DECODE_KEY,
   },
+  billing: {
+    apiUrl: process.env.BILLING_API_URL || 'https://billing.intelekt.cv.ua:9443',
+    apiKey: process.env.BILLING_API_KEY,
+    adminActionIp: process.env.ADMIN_ACTION_IP || '3166694701',
+    adminActionAid: process.env.ADMIN_ACTION_AID || '333',
+  },
 });

@@ -118,3 +118,18 @@ model AnalyticsSummary {
   @@map("analytics_summary")
 }
 
+// Credit History (tracking monthly credit usage)
+model CreditHistory {
+  id        String   @id @default(uuid())
+  uid       Int
+  login     String
+  creditSum Float    @map("credit_sum")
+  usedAt    DateTime @default(now()) @map("used_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([uid])
+  @@index([login])
+  @@index([usedAt])
+  @@map("credit_history")
+}
+
