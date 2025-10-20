@@ -1,0 +1,29 @@
+{
+  "name": "api-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API Gateway with NestJS + Next.js Admin Panel",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:admin\"",
+    "dev:backend": "cd packages/backend && npm run start:dev",
+    "dev:admin": "cd packages/admin && npm run dev",
+    "build": "npm run build:backend && npm run build:admin",
+    "build:backend": "cd packages/backend && npm run build",
+    "build:admin": "cd packages/admin && npm run build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:rebuild": "docker compose up -d --build",
+    "prisma:migrate": "cd packages/backend && npx prisma migrate dev",
+    "prisma:generate": "cd packages/backend && npx prisma generate",
+    "prisma:studio": "cd packages/backend && npx prisma studio",
+    "prisma:seed": "cd packages/backend && npx prisma db seed"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  }
+}

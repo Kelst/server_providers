@@ -1,0 +1,120 @@
+// Prisma Schema for API Gateway
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Admin Users
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  firstName    String?   @map("first_name")
+  lastName     String?   @map("last_name")
+  role         UserRole  @default(ADMIN)
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  tokens       ApiToken[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  SUPER_ADMIN
+}
+
+// API Tokens for external clients
+model ApiToken {
+  id          String    @id @default(uuid())
+  token       String    @unique @db.VarChar(255)
+  tokenHash   String    @unique @map("token_hash") @db.VarChar(64)
+  projectName String    @map("project_name")
+  description String?   @db.Text
+  scopes      String[]  @default([]) // Access scopes: ["billing", "userside", "analytics"]
+  isActive    Boolean   @default(true) @map("is_active")
+  rateLimit   Int       @default(100) @map("rate_limit") // requests per minute
+  createdBy   String    @map("created_by")
+  expiresAt   DateTime? @map("expires_at")
+  lastUsedAt  DateTime? @map("last_used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user       User         @relation(fields: [createdBy], references: [id])
+  requests   ApiRequest[]
+  rateLimits RateLimit[]
+
+  @@index([tokenHash])
+  @@index([isActive])
+  @@index([createdBy])
+  @@map("api_tokens")
+}
+
+// API Request Logs
+model ApiRequest {
+  id              String   @id @default(uuid())
+  tokenId         String   @map("token_id")
+  endpoint        String
+  method          String   @db.VarChar(10)
+  statusCode      Int      @map("status_code")
+  responseTime    Int      @map("response_time") // in milliseconds
+  ipAddress       String   @map("ip_address") @db.VarChar(45)
+  userAgent       String?  @map("user_agent") @db.Text
+  requestPayload  Json?    @map("request_payload")
+  responsePayload Json?    @map("response_payload")
+  errorMessage    String?  @map("error_message") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  token           ApiToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  @@index([tokenId])
+  @@index([createdAt])
+  @@index([endpoint])
+  @@index([statusCode])
+  @@map("api_requests")
+}
+
+// Rate Limiting tracking
+model RateLimit {
+  id            String   @id @default(uuid())
+  tokenId       String   @map("token_id")
+  requestsCount Int      @default(0) @map("requests_count")
+  windowStart   DateTime @map("window_start")
+  resetAt       DateTime @map("reset_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  token         ApiToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenId, windowStart])
+  @@index([resetAt])
+  @@index([tokenId])
+  @@map("rate_limits")
+}
+
+// Analytics Summary (aggregated data)
+model AnalyticsSummary {
+  id              String   @id @default(uuid())
+  date            DateTime @db.Date
+  tokenId         String?  @map("token_id")
+  endpoint        String?
+  totalRequests   Int      @default(0) @map("total_requests")
+  successRequests Int      @default(0) @map("success_requests")
+  errorRequests   Int      @default(0) @map("error_requests")
+  avgResponseTime Float    @map("avg_response_time")
+  minResponseTime Int      @map("min_response_time")
+  maxResponseTime Int      @map("max_response_time")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([date, tokenId, endpoint])
+  @@index([date])
+  @@index([tokenId])
+  @@map("analytics_summary")
+}
+
