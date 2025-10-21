@@ -490,7 +490,28 @@ export class BillingService {
         },
       });
 
-      // 6. Send SMS (no Telegram, only SMS)
+      // 6. Get Telegram chatId if exists (by phone number, not uid)
+      let chatId: string | null = null;
+      if (company && oldPhone) {
+        const telegramTableName = this.companyService.getTelegramTableName(company);
+        // Process phone: 380951470082 -> 0951470082 (remove '38' prefix)
+        const processedPhone = oldPhone.startsWith('38') ? oldPhone.substring(2) : oldPhone;
+        const sqlChatId = `SELECT user_chat_id FROM ${telegramTableName} WHERE phone_number = ?`;
+
+        try {
+          const chatIdData = await this.mysqlService.query<any[]>(sqlChatId, [processedPhone]);
+          if (chatIdData && chatIdData.length > 0 && chatIdData[0].user_chat_id) {
+            chatId = String(chatIdData[0].user_chat_id);
+            this.logger.log(`Found Telegram chatId for uid ${uid} (phone ${processedPhone}): ${chatId}`);
+          } else {
+            this.logger.log(`No Telegram chatId found for uid ${uid} (phone ${processedPhone}) in table ${telegramTableName}`);
+          }
+        } catch (error) {
+          this.logger.warn(`Error fetching chatId from ${telegramTableName}:`, error.message);
+        }
+      }
+
+      // 7. Send notification (try Telegram first if chatId exists, fallback to SMS)
       const providerName = this.companyService.getProviderByCompany(company);
       this.logger.log(`Company "${company}" mapped to provider "${providerName}"`);
 
@@ -516,13 +537,16 @@ export class BillingService {
 
       const notificationMessage = `Код підтвердження зміни номера телефону: ${verificationCode}`;
 
-      this.logger.log(`Sending SMS to ${normalizedNewPhone} with code ${verificationCode} via ${providerName}`);
+      this.logger.log(
+        `Sending notification to uid ${uid}: ${chatId ? 'Telegram chatId=' + chatId : 'No Telegram'}, SMS phone=${normalizedNewPhone}, provider=${providerName}`,
+      );
 
-      // Send notification via SMS only (no Telegram)
+      // Send notification (Telegram first if chatId exists, fallback to SMS)
       // NotificationsService will handle phone formatting for TurboSMS API
       await this.notificationsService.sendNotification({
         provider: providerValue,
-        phoneNumber: normalizedNewPhone,
+        chatId: chatId || undefined, // Try Telegram first if chatId exists
+        phoneNumber: normalizedNewPhone, // Fallback to SMS
         message: notificationMessage,
         uid,
         metadata: {
