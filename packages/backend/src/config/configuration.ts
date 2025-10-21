@@ -27,4 +27,27 @@ export default () => ({
     adminActionIp: process.env.ADMIN_ACTION_IP || '3166694701',
     adminActionAid: process.env.ADMIN_ACTION_AID || '333',
   },
+  notifications: {
+    telegram: {
+      opticom: process.env.TELEGRAM_API_OPTICOM,
+      veles: process.env.TELEGRAM_API_VELES,
+      opensvit: process.env.TELEGRAM_API_OPENSVIT,
+      intelekt: process.env.TELEGRAM_API_INTELEKT,
+    },
+    sms: {
+      url: process.env.TURBOSMS_URL || 'https://api.turbosms.ua/message/send.json',
+      tokens: {
+        opticom: process.env.TURBOSMS_TOKEN_OPTICOM,
+        veles: process.env.TURBOSMS_TOKEN_VELES,
+        opensvit: process.env.TURBOSMS_TOKEN_OPENSVIT,
+        intelekt: process.env.TURBOSMS_TOKEN_INTELEKT,
+      },
+      senders: {
+        opticom: process.env.SMS_SENDER_OPTICOM || 'OpticomPlus',
+        veles: process.env.SMS_SENDER_VELES || 'VelesISP',
+        opensvit: process.env.SMS_SENDER_OPENSVIT || 'Opensvit',
+        intelekt: process.env.SMS_SENDER_INTELEKT || 'INTELEKT',
+      },
+    },
+  },
 });

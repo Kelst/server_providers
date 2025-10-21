@@ -16,4 +16,23 @@ export default Joi.object({
   ABILLS_DB_PASSWORD: Joi.string().required(),
   ABILLS_DB_NAME: Joi.string().required(),
   ABILLS_DB_DECODE_KEY: Joi.string().required(),
+
+  // Telegram Bot API URLs
+  TELEGRAM_API_OPTICOM: Joi.string().optional(),
+  TELEGRAM_API_VELES: Joi.string().optional(),
+  TELEGRAM_API_OPENSVIT: Joi.string().optional(),
+  TELEGRAM_API_INTELEKT: Joi.string().optional(),
+
+  // TurboSMS Configuration
+  TURBOSMS_URL: Joi.string().default('https://api.turbosms.ua/message/send.json'),
+  TURBOSMS_TOKEN_OPTICOM: Joi.string().optional(),
+  TURBOSMS_TOKEN_VELES: Joi.string().optional(),
+  TURBOSMS_TOKEN_OPENSVIT: Joi.string().optional(),
+  TURBOSMS_TOKEN_INTELEKT: Joi.string().optional(),
+
+  // SMS Senders
+  SMS_SENDER_OPTICOM: Joi.string().default('OpticomPlus'),
+  SMS_SENDER_VELES: Joi.string().default('VelesISP'),
+  SMS_SENDER_OPENSVIT: Joi.string().default('Opensvit'),
+  SMS_SENDER_INTELEKT: Joi.string().default('INTELEKT'),
 });

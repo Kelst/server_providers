@@ -35,6 +35,12 @@ import { FeesResponseDto } from './dto/fees.dto';
 import { PaymentsResponseDto } from './dto/payments.dto';
 import { ReloadSessionResponseDto, ClearCidResponseDto } from './dto/session-reload.dto';
 import { AddCreditResponseDto } from './dto/credit.dto';
+import {
+  RequestPhoneChangeDto,
+  RequestPhoneChangeResponseDto,
+  ConfirmPhoneChangeDto,
+  ConfirmPhoneChangeResponseDto,
+} from './dto/phone-change.dto';
 
 @ApiTags('billing')
 @ApiBearerAuth('API-token')
@@ -265,5 +271,45 @@ export class BillingController {
   @ApiResponse({ status: 400, description: 'Bad request (user not found, already has credit, etc.)' })
   async addCredit(@Param('uid', ParseIntPipe) uid: number): Promise<AddCreditResponseDto> {
     return this.billingService.addCredit(uid);
+  }
+
+  @Post('users/:uid/phone/request')
+  @ApiOperation({
+    summary: 'Request phone number change',
+    description:
+      'Initiates phone number change process. Sends a 6-digit verification code via SMS to the new phone number. Code is valid for 5 minutes.',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'Verification code sent successfully',
+    type: RequestPhoneChangeResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Bad request (user not found, invalid phone, etc.)' })
+  async requestPhoneChange(
+    @Param('uid', ParseIntPipe) uid: number,
+    @Body() dto: RequestPhoneChangeDto,
+  ): Promise<RequestPhoneChangeResponseDto> {
+    return this.billingService.requestPhoneChange(uid, dto.newPhone);
+  }
+
+  @Post('users/:uid/phone/confirm')
+  @ApiOperation({
+    summary: 'Confirm phone number change',
+    description:
+      'Confirms phone number change by verifying the 6-digit code. Updates phone number in users_contacts table and logs the action to admin_actions.',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'Phone number updated successfully',
+    type: ConfirmPhoneChangeResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid code or code expired' })
+  async confirmPhoneChange(
+    @Param('uid', ParseIntPipe) uid: number,
+    @Body() dto: ConfirmPhoneChangeDto,
+  ): Promise<ConfirmPhoneChangeResponseDto> {
+    return this.billingService.confirmPhoneChange(uid, dto.code);
   }
 }

@@ -4,9 +4,14 @@ import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { MySQLService } from './mysql.service';
 import { PrismaService } from '../database/prisma.service';
+import { CompanyService } from './company.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationProvider } from '../notifications/enums/provider.enum';
 import { BillingLoginResponseDto } from './dto/billing-auth.dto';
 import { ReloadSessionResponseDto, SessionData, BillingApiRequest } from './dto/session-reload.dto';
 import { AddCreditResponseDto } from './dto/credit.dto';
+import { generateVerificationCode } from './helpers/verification-code.helper';
+import { normalizePhoneNumber, isValidUkrainianPhone } from './helpers/phone-normalize.helper';
 
 interface AbillsUser {
   id: string;
@@ -30,6 +35,8 @@ export class BillingService {
     private readonly mysqlService: MySQLService,
     private readonly configService: ConfigService,
     private readonly prismaService: PrismaService,
+    private readonly companyService: CompanyService,
+    private readonly notificationsService: NotificationsService,
     @InjectQueue('session-reload') private readonly sessionQueue: Queue,
   ) {}
 
@@ -420,6 +427,195 @@ export class BillingService {
       };
     } catch (error) {
       this.logger.error(`Error adding credit for uid ${uid}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Request phone number change (send verification code via SMS)
+   */
+  async requestPhoneChange(uid: number, newPhone: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Normalize phone number to 380XXXXXXXXX format
+      const normalizedNewPhone = normalizePhoneNumber(newPhone);
+
+      this.logger.log(`Phone change requested for uid ${uid}: ${newPhone} -> ${normalizedNewPhone}`);
+
+      // Validate phone number format
+      if (!isValidUkrainianPhone(normalizedNewPhone)) {
+        throw new BadRequestException(
+          `Невірний формат номера телефону. Очікується український номер (наприклад: +380671234567 або 0671234567)`,
+        );
+      }
+
+      // 1. Get user data (login, oldPhone, company)
+      const sqlUser = `
+        SELECT u.id as login, c.company
+        FROM users u
+        LEFT JOIN config_gid c ON u.gid = c.gid
+        WHERE u.uid = ?
+      `;
+      const userData = await this.mysqlService.query<any[]>(sqlUser, [uid]);
+
+      if (!userData || userData.length === 0) {
+        throw new BadRequestException('Користувача не знайдено');
+      }
+
+      const login = userData[0].login;
+      const company = userData[0].company || '';
+
+      this.logger.log(`User data: uid=${uid}, login=${login}, company="${company}"`);
+
+      // 2. Get old phone from users_contacts (already normalized in DB)
+      const sqlPhone = `SELECT value FROM users_contacts WHERE uid = ? AND priority = '0'`;
+      const phoneData = await this.mysqlService.query<any[]>(sqlPhone, [uid]);
+      const oldPhone = phoneData.length > 0 ? phoneData[0].value : '';
+
+      // 3. Generate verification code
+      const verificationCode = generateVerificationCode();
+
+      // 4. Calculate expiration (5 minutes from now)
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+      // 5. Save to PostgreSQL (use normalized phone)
+      await this.prismaService.phoneChangeVerification.create({
+        data: {
+          uid,
+          login,
+          oldPhone,
+          newPhone: normalizedNewPhone, // Store normalized phone
+          verificationCode,
+          provider: company,
+          expiresAt,
+        },
+      });
+
+      // 6. Send SMS (no Telegram, only SMS)
+      const providerName = this.companyService.getProviderByCompany(company);
+      this.logger.log(`Company "${company}" mapped to provider "${providerName}"`);
+
+      // Map provider name to enum (match by value, not key)
+      let providerValue: NotificationProvider;
+      switch (providerName) {
+        case 'Opticom':
+          providerValue = NotificationProvider.OPTICOM;
+          break;
+        case 'Veles':
+          providerValue = NotificationProvider.VELES;
+          break;
+        case 'Opensvit':
+          providerValue = NotificationProvider.OPENSVIT;
+          break;
+        case 'Intelekt':
+        default:
+          providerValue = NotificationProvider.INTELEKT;
+          break;
+      }
+
+      this.logger.log(`Provider enum: ${providerValue} (from company: "${company}")`);
+
+      const notificationMessage = `Код підтвердження зміни номера телефону: ${verificationCode}`;
+
+      this.logger.log(`Sending SMS to ${normalizedNewPhone} with code ${verificationCode} via ${providerName}`);
+
+      // Send notification via SMS only (no Telegram)
+      // NotificationsService will handle phone formatting for TurboSMS API
+      await this.notificationsService.sendNotification({
+        provider: providerValue,
+        phoneNumber: normalizedNewPhone,
+        message: notificationMessage,
+        uid,
+        metadata: {
+          action: 'phone_change_request',
+          oldPhone,
+          newPhone: normalizedNewPhone,
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Код підтвердження відправлено на новий номер телефону',
+      };
+    } catch (error) {
+      this.logger.error(`Error requesting phone change for uid ${uid}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Confirm phone number change (verify code and update phone)
+   */
+  async confirmPhoneChange(
+    uid: number,
+    code: string,
+  ): Promise<{ success: boolean; message: string; newPhone?: string }> {
+    try {
+      this.logger.log(`Phone change confirmation for uid ${uid} with code ${code}`);
+
+      // 1. Find verification record
+      const codeRecord = await this.prismaService.phoneChangeVerification.findFirst({
+        where: {
+          uid,
+          verificationCode: code,
+          expiresAt: {
+            gte: new Date(), // Not expired
+          },
+        },
+        orderBy: {
+          createdAt: 'desc', // Get most recent
+        },
+      });
+
+      if (!codeRecord) {
+        return {
+          success: false,
+          message: 'Невірний код або час дії коду закінчився',
+        };
+      }
+
+      // 2. Update phone in users_contacts
+      const updateSql = `
+        UPDATE users_contacts
+        SET value = ?
+        WHERE uid = ? AND value = ?
+      `;
+      const updateResult = await this.mysqlService.query<any>(updateSql, [
+        codeRecord.newPhone,
+        uid,
+        codeRecord.oldPhone,
+      ]);
+
+      if (updateResult.affectedRows === 0) {
+        throw new Error('Помилка оновлення номера телефону в базі даних');
+      }
+
+      // 3. Log to admin_actions
+      const currentDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      const ip = this.configService.get<string>('billing.adminActionIp');
+      const aid = this.configService.get<string>('billing.adminActionAid');
+
+      const logSql = `
+        INSERT INTO admin_actions (actions, datetime, ip, uid, aid, module, action_type)
+        VALUES (?, ?, ?, ?, ?, '', 2)
+      `;
+      const actionText = `Номер телефону змінено з особистого кабінету ${codeRecord.oldPhone} -> ${codeRecord.newPhone}`;
+
+      await this.mysqlService.query(logSql, [actionText, currentDate, ip, uid, aid]);
+
+      // 4. Delete used code
+      await this.prismaService.phoneChangeVerification.delete({
+        where: { id: codeRecord.id },
+      });
+
+      this.logger.log(`Phone changed successfully for uid ${uid}: ${codeRecord.oldPhone} -> ${codeRecord.newPhone}`);
+
+      return {
+        success: true,
+        message: 'Код підтверджено, номер телефону оновлено',
+        newPhone: codeRecord.newPhone,
+      };
+    } catch (error) {
+      this.logger.error(`Error confirming phone change for uid ${uid}:`, error);
       throw error;
     }
   }

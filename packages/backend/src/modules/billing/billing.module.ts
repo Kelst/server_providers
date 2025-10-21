@@ -7,11 +7,13 @@ import { MySQLService } from './mysql.service';
 import { CompanyService } from './company.service';
 import { UserDataService } from './user-data.service';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { SessionReloadProcessor } from './processors/session-reload.processor';
 
 @Module({
   imports: [
     AuthModule, // Import AuthModule for ApiTokenGuard
+    NotificationsModule, // Import NotificationsModule for phone change SMS
     // Configure Bull Queue for session reload
     BullModule.registerQueueAsync({
       name: 'session-reload',

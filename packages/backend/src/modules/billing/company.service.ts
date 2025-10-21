@@ -190,6 +190,49 @@ export class CompanyService implements OnModuleInit {
   }
 
   /**
+   * Get notification provider name from company name
+   * Maps company names to notification provider enum values
+   * @param company - Company name (e.g., "Opticom", "Veles")
+   * @returns Provider name for NotificationProvider enum
+   */
+  getProviderByCompany(company: string): string {
+    if (!company) {
+      this.logger.warn('getProviderByCompany: company is empty, defaulting to Intelekt');
+      return 'Intelekt';
+    }
+
+    // Normalize company name (trim whitespace, handle case-insensitive)
+    const normalizedCompany = company.trim();
+
+    // Map company names to provider enum values
+    // These match the NotificationProvider enum
+    const providerMap: Record<string, string> = {
+      Opticom: 'Opticom',
+      'Opticom+': 'Opticom', // Alternative name
+      OpticomPlus: 'Opticom',
+      Veles: 'Veles',
+      'Veles ISP': 'Veles',
+      VelesISP: 'Veles',
+      Opensvit: 'Opensvit',
+      'Open svit': 'Opensvit',
+      Intelekt: 'Intelekt',
+      INTELEKT: 'Intelekt',
+    };
+
+    const provider = providerMap[normalizedCompany];
+
+    if (!provider) {
+      this.logger.warn(
+        `getProviderByCompany: Unknown company "${normalizedCompany}", defaulting to Intelekt. Available companies: ${Object.keys(providerMap).join(', ')}`,
+      );
+      return 'Intelekt';
+    }
+
+    this.logger.debug(`getProviderByCompany: "${normalizedCompany}" -> "${provider}"`);
+    return provider;
+  }
+
+  /**
    * Build SQL WHERE condition for filtering by company GIDs
    * @param company - Company name
    * @returns SQL WHERE condition string (e.g., " AND gid IN (24, 25)")
