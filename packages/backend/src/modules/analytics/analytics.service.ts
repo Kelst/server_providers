@@ -284,4 +284,144 @@ export class AnalyticsService {
       data,
     });
   }
+
+  /**
+   * Get rate limit events for user's tokens
+   */
+  async getRateLimitEvents(userId: string, tokenId?: string, limit: number = 100) {
+    const tokens = await this.prisma.apiToken.findMany({
+      where: { createdBy: userId },
+      select: { id: true },
+    });
+
+    const tokenIds = tokenId ? [tokenId] : tokens.map((t) => t.id);
+
+    const events = await this.prisma.rateLimitEvent.findMany({
+      where: { tokenId: { in: tokenIds } },
+      include: {
+        token: {
+          select: {
+            projectName: true,
+            rateLimit: true,
+          },
+        },
+      },
+      orderBy: { blockedAt: 'desc' },
+      take: limit,
+    });
+
+    const totalEvents = await this.prisma.rateLimitEvent.count({
+      where: { tokenId: { in: tokenIds } },
+    });
+
+    return {
+      total: totalEvents,
+      events,
+    };
+  }
+
+  /**
+   * Get audit log for specific token
+   */
+  async getTokenAuditLog(tokenId: string, userId: string) {
+    // Verify token belongs to user
+    const token = await this.prisma.apiToken.findFirst({
+      where: {
+        id: tokenId,
+        createdBy: userId,
+      },
+    });
+
+    if (!token) {
+      return null;
+    }
+
+    const auditLogs = await this.prisma.tokenAuditLog.findMany({
+      where: { tokenId },
+      include: {
+        admin: {
+          select: {
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      tokenId,
+      projectName: token.projectName,
+      logs: auditLogs,
+    };
+  }
+
+  /**
+   * Get rate limit statistics
+   */
+  async getRateLimitStats(userId: string) {
+    const tokens = await this.prisma.apiToken.findMany({
+      where: { createdBy: userId },
+      select: { id: true },
+    });
+
+    const tokenIds = tokens.map((t) => t.id);
+
+    const [totalEvents, last24h, topOffenders] = await Promise.all([
+      // Total rate limit events
+      this.prisma.rateLimitEvent.count({
+        where: { tokenId: { in: tokenIds } },
+      }),
+
+      // Events in last 24 hours
+      this.prisma.rateLimitEvent.count({
+        where: {
+          tokenId: { in: tokenIds },
+          blockedAt: {
+            gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
+          },
+        },
+      }),
+
+      // Top tokens by rate limit hits
+      this.prisma.rateLimitEvent.groupBy({
+        by: ['tokenId'],
+        where: { tokenId: { in: tokenIds } },
+        _count: true,
+        orderBy: {
+          _count: {
+            tokenId: 'desc',
+          },
+        },
+        take: 5,
+      }),
+    ]);
+
+    // Get token details for top offenders
+    const topOffendersWithDetails = await Promise.all(
+      topOffenders.map(async (item) => {
+        const token = await this.prisma.apiToken.findUnique({
+          where: { id: item.tokenId },
+          select: {
+            projectName: true,
+            rateLimit: true,
+          },
+        });
+
+        return {
+          tokenId: item.tokenId,
+          projectName: token?.projectName,
+          rateLimit: token?.rateLimit,
+          hitCount: item._count,
+        };
+      }),
+    );
+
+    return {
+      totalEvents,
+      last24h,
+      topOffenders: topOffendersWithDetails,
+    };
+  }
 }

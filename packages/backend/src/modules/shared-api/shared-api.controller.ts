@@ -1,11 +1,12 @@
 import { Controller, Get, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { ApiTokenGuard } from '../auth/guards/api-token.guard';
+import { RateLimitGuard } from '../../common/guards/rate-limit.guard';
 
 @ApiTags('shared')
 @ApiBearerAuth('API-token')
 @Controller('shared')
-@UseGuards(ApiTokenGuard)
+@UseGuards(ApiTokenGuard, RateLimitGuard)
 export class SharedApiController {
   // Example endpoint that requires API token authentication
   @Get('example')

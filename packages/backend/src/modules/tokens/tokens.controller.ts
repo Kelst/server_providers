@@ -26,7 +26,9 @@ export class TokensController {
   @ApiOperation({ summary: 'Create new API token' })
   @ApiResponse({ status: 201, description: 'Token created successfully' })
   create(@Body() createTokenDto: CreateTokenDto, @Request() req) {
-    return this.tokensService.create(createTokenDto, req.user.id);
+    const ipAddress = req.ip || req.connection?.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'];
+    return this.tokensService.create(createTokenDto, req.user.id, ipAddress, userAgent);
   }
 
   @Get()
@@ -58,13 +60,17 @@ export class TokensController {
     @Body() updateTokenDto: UpdateTokenDto,
     @Request() req,
   ) {
-    return this.tokensService.update(id, updateTokenDto, req.user.id);
+    const ipAddress = req.ip || req.connection?.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'];
+    return this.tokensService.update(id, updateTokenDto, req.user.id, ipAddress, userAgent);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete API token' })
   @ApiResponse({ status: 200, description: 'Token deleted successfully' })
   remove(@Param('id') id: string, @Request() req) {
-    return this.tokensService.remove(id, req.user.id);
+    const ipAddress = req.ip || req.connection?.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'];
+    return this.tokensService.remove(id, req.user.id, ipAddress, userAgent);
   }
 }

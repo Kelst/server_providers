@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards, Request, Query } from '@nestjs/common';
+import { Controller, Get, UseGuards, Request, Query, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { AnalyticsService } from './analytics.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -46,5 +46,32 @@ export class AnalyticsController {
   @ApiResponse({ status: 200, description: 'Error stats retrieved' })
   getErrorStats(@Request() req) {
     return this.analyticsService.getErrorStats(req.user.id);
+  }
+
+  @Get('rate-limit-events')
+  @ApiOperation({ summary: 'Get rate limit events' })
+  @ApiResponse({ status: 200, description: 'Rate limit events retrieved' })
+  getRateLimitEvents(
+    @Request() req,
+    @Query('tokenId') tokenId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const limitNum = limit ? parseInt(limit, 10) : 100;
+    return this.analyticsService.getRateLimitEvents(req.user.id, tokenId, limitNum);
+  }
+
+  @Get('rate-limit-stats')
+  @ApiOperation({ summary: 'Get rate limit statistics' })
+  @ApiResponse({ status: 200, description: 'Rate limit statistics retrieved' })
+  getRateLimitStats(@Request() req) {
+    return this.analyticsService.getRateLimitStats(req.user.id);
+  }
+
+  @Get('audit-log/:tokenId')
+  @ApiOperation({ summary: 'Get audit log for token' })
+  @ApiResponse({ status: 200, description: 'Audit log retrieved' })
+  @ApiResponse({ status: 404, description: 'Token not found' })
+  getTokenAuditLog(@Param('tokenId') tokenId: string, @Request() req) {
+    return this.analyticsService.getTokenAuditLog(tokenId, req.user.id);
   }
 }

@@ -22,6 +22,7 @@ model User {
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   tokens       ApiToken[]
+  auditLogs    TokenAuditLog[]
 
   @@map("users")
 }
@@ -47,9 +48,11 @@ model ApiToken {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  user       User         @relation(fields: [createdBy], references: [id])
-  requests   ApiRequest[]
-  rateLimits RateLimit[]
+  user            User              @relation(fields: [createdBy], references: [id])
+  requests        ApiRequest[]
+  rateLimits      RateLimit[]
+  rateLimitEvents RateLimitEvent[]
+  auditLogs       TokenAuditLog[]
 
   @@index([tokenHash])
   @@index([isActive])
@@ -242,5 +245,46 @@ model TariffChangeHistory {
   @@index([uid, changedAt])
   @@index([changedAt])
   @@map("tariff_change_history")
+}
+
+// Rate Limit Events (логування перевищення rate limits)
+model RateLimitEvent {
+  id            String   @id @default(uuid())
+  tokenId       String   @map("token_id")
+  endpoint      String
+  method        String   @db.VarChar(10)
+  requestsCount Int      @map("requests_count")
+  limitValue    Int      @map("limit_value")
+  ipAddress     String   @map("ip_address") @db.VarChar(45)
+  userAgent     String?  @map("user_agent") @db.Text
+  blockedAt     DateTime @default(now()) @map("blocked_at")
+
+  token         ApiToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  @@index([tokenId])
+  @@index([blockedAt])
+  @@index([endpoint])
+  @@map("rate_limit_events")
+}
+
+// Token Audit Log (аудит змін токенів)
+model TokenAuditLog {
+  id        String   @id @default(uuid())
+  tokenId   String   @map("token_id")
+  adminId   String   @map("admin_id")
+  action    String   // 'created', 'updated', 'deleted', 'regenerated', 'deactivated', 'activated'
+  changes   Json?    // Що саме змінилось (old value -> new value)
+  ipAddress String   @map("ip_address") @db.VarChar(45)
+  userAgent String?  @map("user_agent") @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  token     ApiToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  admin     User     @relation(fields: [adminId], references: [id])
+
+  @@index([tokenId])
+  @@index([adminId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("token_audit_log")
 }
 
