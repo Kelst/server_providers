@@ -14,6 +14,16 @@ function bytesToGB(bytes: number): number {
 }
 
 /**
+ * Convert bytes to MB
+ * @param bytes - Number of bytes
+ * @returns Size in MB
+ */
+function bytesToMB(bytes: number): number {
+  const mb = bytes / Math.pow(1024, 2);
+  return mb;
+}
+
+/**
  * Convert data from database format (octets + gigawords)
  * @param data - Bytes count (octets)
  * @param acc - Gigaword count (acct_input_gigawords or acct_output_gigawords)
@@ -33,6 +43,29 @@ export function convertDataFromDB(
     return parseFloat(bytesToGB(data || 0).toFixed(2));
   } else {
     return parseFloat(bytesToGB(acc * base + (data || 0)).toFixed(2));
+  }
+}
+
+/**
+ * Convert data from database format (octets + gigawords) to MB
+ * @param data - Bytes count (octets)
+ * @param acc - Gigaword count (acct_input_gigawords or acct_output_gigawords)
+ * @returns Data size in MB rounded to 2 decimal places
+ */
+export function convertDataToMB(
+  data: number | null | undefined,
+  acc: number | null | undefined,
+): number {
+  if (!data && !acc) {
+    return 0;
+  }
+
+  const base = 4294967295;
+
+  if (acc === 0 || !acc) {
+    return parseFloat(bytesToMB(data || 0).toFixed(2));
+  } else {
+    return parseFloat(bytesToMB(acc * base + (data || 0)).toFixed(2));
   }
 }
 

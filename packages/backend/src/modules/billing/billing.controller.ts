@@ -33,6 +33,7 @@ import {
 } from './dto/user-info.dto';
 import { FeesResponseDto } from './dto/fees.dto';
 import { PaymentsResponseDto } from './dto/payments.dto';
+import { SessionHistoryResponseDto } from './dto/session-history.dto';
 import { ReloadSessionResponseDto, ClearCidResponseDto } from './dto/session-reload.dto';
 import { AddCreditResponseDto } from './dto/credit.dto';
 import {
@@ -165,6 +166,24 @@ export class BillingController {
     @Param('uid', ParseIntPipe) uid: number,
   ): Promise<SessionInfoDto> {
     return this.userDataService.getSessionInfo(uid);
+  }
+
+  @Get('users/:uid/sessions/history')
+  @ApiOperation({
+    summary: 'Get session history',
+    description:
+      'Returns user session history from internet_log table: start time, tariff, duration, traffic sent/received, CID, guest IP. Returns up to 1000 most recent sessions ordered by start date (descending).',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'Session history with count and list of sessions',
+    type: SessionHistoryResponseDto,
+  })
+  async getSessionHistory(
+    @Param('uid', ParseIntPipe) uid: number,
+  ): Promise<SessionHistoryResponseDto> {
+    return this.userDataService.getSessionHistory(uid);
   }
 
   @Get('users/:uid/tariff')

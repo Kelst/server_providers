@@ -70,6 +70,9 @@ export class SessionInfoDto {
 
   @ApiProperty({ description: 'Data received (MB)', example: 2048.75 })
   getData: number;
+ 
+  @ApiProperty({ description: 'Cid mac adress', example: '909a.4a95.5f20' })
+  cid: string;
 
   @ApiProperty({ description: 'Internet connection active', example: true })
   statusInternet: boolean;

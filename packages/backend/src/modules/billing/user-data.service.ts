@@ -14,8 +14,9 @@ import {
 import { FeesResponseDto, FeeItemDto } from './dto/fees.dto';
 import { PaymentsResponseDto, PaymentItemDto } from './dto/payments.dto';
 import { AvailableTariffsResponseDto, AvailableTariffDto } from './dto/available-tariffs.dto';
+import { SessionHistoryResponseDto, SessionHistoryItemDto } from './dto/session-history.dto';
 import { intToIp } from './helpers/ip.helper';
-import { convertDataFromDB, formatTime, getDifference } from './helpers/data.helper';
+import { convertDataToMB, formatTime, getDifference } from './helpers/data.helper';
 import { processPhoneNumber, getLowestPriorityValue } from './helpers/phone.helper';
 import { checkUserAccess, getGroupIdFromAccess } from './helpers/access.helper';
 
@@ -163,7 +164,7 @@ export class UserDataService {
     try {
       const sql = `
         SELECT framed_ip_address, started, acct_session_time,
-               acct_input_octets, acct_output_octets,
+               acct_input_octets, cid, acct_output_octets,
                acct_input_gigawords, acct_output_gigawords
         FROM internet_online
         WHERE uid = ?
@@ -176,6 +177,7 @@ export class UserDataService {
           duration: '0',
           sendData: 0,
           getData: 0,
+          cid:'',
           statusInternet: false,
         };
       }
@@ -189,8 +191,9 @@ export class UserDataService {
       return {
         guestIp: intToIp(row.framed_ip_address),
         duration,
-        sendData: convertDataFromDB(row.acct_input_octets, row.acct_input_gigawords),
-        getData: convertDataFromDB(row.acct_output_octets, row.acct_output_gigawords),
+        sendData: convertDataToMB(row.acct_output_octets, row.acct_output_gigawords),
+        getData: convertDataToMB(row.acct_input_octets, row.acct_input_gigawords),
+        cid: row.cid,
         statusInternet: true,
       };
     } catch (error) {
@@ -684,6 +687,72 @@ export class UserDataService {
       };
     } catch (error) {
       this.logger.error(`Error getting available tariffs for uid ${uid}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get session history for user from internet_log table
+   * Returns up to 1000 most recent sessions with traffic and duration info
+   */
+  async getSessionHistory(uid: number): Promise<SessionHistoryResponseDto> {
+    try {
+      this.logger.log(`Getting session history for uid ${uid}`);
+
+      // Query for statistics (count)
+      const statsSQL = `
+        SELECT COUNT(*) as count
+        FROM internet_log
+        WHERE uid = ?
+      `;
+
+      // Query for detailed session records
+      const detailsSQL = `
+        SELECT
+          DATE_FORMAT(start, '%Y-%m-%d %H:%i:%s') as start,
+          tp_id,
+          duration,
+          sent,
+          ip,
+          recv,
+          cid,
+          acct_input_gigawords,
+          acct_output_gigawords,
+          guest
+        FROM internet_log
+        WHERE uid = ?
+        ORDER BY start DESC
+        LIMIT 1000
+      `;
+
+      // Execute both queries in parallel
+      const [statsResult, detailsResult] = await Promise.all([
+        this.mysqlService.query<any[]>(statsSQL, [uid]),
+        this.mysqlService.query<any[]>(detailsSQL, [uid]),
+      ]);
+
+      // Build response
+      const count = statsResult[0]?.count ? parseInt(statsResult[0].count, 10) : 0;
+
+      const sessions: SessionHistoryItemDto[] = detailsResult.map((row) => ({
+        start: row.start,
+        tpId: row.tp_id,
+        duration: formatTime(row.duration),
+        sendData: convertDataToMB(row.sent, row.acct_output_gigawords),
+        getData: convertDataToMB(row.recv, row.acct_input_gigawords),
+        ip: intToIp(row.ip),
+        cid: String(row.cid || ''),
+        guest: row.guest || 0,
+      }));
+
+      this.logger.log(`Found ${count} total sessions for uid ${uid}, returning ${sessions.length}`);
+
+      return {
+        count,
+        sessions,
+      };
+    } catch (error) {
+      this.logger.error(`Error getting session history for uid ${uid}:`, error);
       throw error;
     }
   }
