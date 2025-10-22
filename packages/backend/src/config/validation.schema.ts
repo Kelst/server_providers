@@ -17,6 +17,12 @@ export default Joi.object({
   ABILLS_DB_NAME: Joi.string().required(),
   ABILLS_DB_DECODE_KEY: Joi.string().required(),
 
+  // Billing API Configuration
+  BILLING_API_URL: Joi.string().default('https://billing.intelekt.cv.ua:9443'),
+  BILLING_API_KEY: Joi.string().required(),
+  ADMIN_ACTION_IP: Joi.string().default('3166694701'),
+  ADMIN_ACTION_AID: Joi.string().default('333'),
+
   // Telegram Bot API URLs
   TELEGRAM_API_OPTICOM: Joi.string().optional(),
   TELEGRAM_API_VELES: Joi.string().optional(),

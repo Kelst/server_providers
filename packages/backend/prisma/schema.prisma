@@ -187,3 +187,60 @@ model PhoneChangeVerification {
   @@map("phone_change_verifications")
 }
 
+// Phone Login Verifications (OTP для входу за номером телефону)
+model PhoneLoginVerification {
+  id               String   @id @default(uuid())
+  phoneNumber      String   @map("phone_number") // 380XXXXXXXXX формат
+  provider         String   // Opticom, Veles, Opensvit, Intelekt
+  verificationCode String   @map("verification_code") @db.VarChar(6)
+  uid              Int?     // Знайдений користувач (null до верифікації)
+  chatId           String?  @map("chat_id") // Telegram chat_id якщо знайдено
+  attempts         Int      @default(1) // Лічильник спроб відправки
+  lastAttemptAt    DateTime @default(now()) @map("last_attempt_at")
+  expiresAt        DateTime @map("expires_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([phoneNumber])
+  @@index([provider])
+  @@index([phoneNumber, provider])
+  @@index([verificationCode])
+  @@index([expiresAt])
+  @@index([lastAttemptAt])
+  @@map("phone_login_verifications")
+}
+
+// Login Attempts (захист від брутфорсу паролів)
+model LoginAttempt {
+  id         String   @id @default(uuid())
+  login      String   // Login користувача
+  ip         String?  // IP адреса (якщо доступна)
+  success    Boolean  // Успішна спроба чи ні
+  failReason String?  @map("fail_reason") @db.Text // Причина помилки
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([login])
+  @@index([login, createdAt])
+  @@index([ip])
+  @@index([ip, createdAt])
+  @@index([success])
+  @@map("login_attempts")
+}
+
+// Tariff Change History (історія зміни тарифних планів)
+model TariffChangeHistory {
+  id            String   @id @default(uuid())
+  uid           Int      // User ID
+  login         String   // User login
+  oldTpId       Int      @map("old_tp_id") // Previous tariff plan ID
+  oldTariffName String   @map("old_tariff_name") // Previous tariff name
+  newTpId       Int      @map("new_tp_id") // New tariff plan ID
+  newTariffName String   @map("new_tariff_name") // New tariff name
+  internetId    Int      @map("internet_id") // internet_main.id
+  changedAt     DateTime @default(now()) @map("changed_at")
+
+  @@index([uid])
+  @@index([uid, changedAt])
+  @@index([changedAt])
+  @@map("tariff_change_history")
+}
+

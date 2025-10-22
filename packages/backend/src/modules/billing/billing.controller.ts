@@ -41,6 +41,14 @@ import {
   ConfirmPhoneChangeDto,
   ConfirmPhoneChangeResponseDto,
 } from './dto/phone-change.dto';
+import {
+  PhoneLoginRequestDto,
+  PhoneLoginRequestResponseDto,
+  PhoneLoginVerifyDto,
+  PhoneLoginVerifyResponseDto,
+} from './dto/phone-login.dto';
+import { AvailableTariffsResponseDto } from './dto/available-tariffs.dto';
+import { ChangeTariffDto, ChangeTariffResponseDto } from './dto/change-tariff.dto';
 
 @ApiTags('billing')
 @ApiBearerAuth('API-token')
@@ -72,6 +80,48 @@ export class BillingController {
     @Body() loginDto: BillingLoginDto,
   ): Promise<BillingLoginResponseDto> {
     return this.billingService.login(loginDto.login, loginDto.password);
+  }
+
+  @Post('auth/phone/request')
+  @ApiOperation({
+    summary: 'Request phone login (send verification code)',
+    description:
+      'Initiates phone-based login. Finds user by phone number within the specified provider, sends 6-digit verification code via Telegram (with SMS fallback). Code is valid for 5 minutes. Rate limit: 3 attempts per 15 minutes.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Verification code sent successfully or rate limit exceeded',
+    type: PhoneLoginRequestResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request (user not found, invalid phone format, etc.)',
+  })
+  async requestPhoneLogin(
+    @Body() dto: PhoneLoginRequestDto,
+  ): Promise<PhoneLoginRequestResponseDto> {
+    return this.billingService.requestPhoneLogin(dto.phoneNumber, dto.provider);
+  }
+
+  @Post('auth/phone/verify')
+  @ApiOperation({
+    summary: 'Verify phone login code',
+    description:
+      'Verifies the 6-digit code sent to user phone. Returns user data (uid, login, company, status) if code is valid. Code is deleted after successful verification.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Code verified successfully or invalid/expired code',
+    type: PhoneLoginVerifyResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request (invalid code, expired, etc.)',
+  })
+  async verifyPhoneLogin(
+    @Body() dto: PhoneLoginVerifyDto,
+  ): Promise<PhoneLoginVerifyResponseDto> {
+    return this.billingService.verifyPhoneLogin(dto.phoneNumber, dto.provider, dto.code);
   }
 
   // ==================== User Data Endpoints ====================
@@ -129,6 +179,25 @@ export class BillingController {
     @Param('uid', ParseIntPipe) uid: number,
   ): Promise<TariffInfoDto> {
     return this.userDataService.getTariffInfo(uid);
+  }
+
+  @Get('users/:uid/tariffs/available')
+  @ApiOperation({
+    summary: 'Get available tariffs for user',
+    description:
+      'Returns available tariff plans that user can switch to. Excludes current tariff. Only shows tariffs from the same gid group, with status=0 and module=Internet. Sorted by speed (descending).',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'List of available tariffs',
+    type: AvailableTariffsResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'User does not have a tariff plan assigned' })
+  async getAvailableTariffs(
+    @Param('uid', ParseIntPipe) uid: number,
+  ): Promise<AvailableTariffsResponseDto> {
+    return this.userDataService.getAvailableTariffs(uid);
   }
 
   @Get('users/:uid/billing')
@@ -311,5 +380,29 @@ export class BillingController {
     @Body() dto: ConfirmPhoneChangeDto,
   ): Promise<ConfirmPhoneChangeResponseDto> {
     return this.billingService.confirmPhoneChange(uid, dto.code);
+  }
+
+  @Post('users/:uid/tariff/change')
+  @ApiOperation({
+    summary: 'Change tariff plan',
+    description:
+      'Changes user tariff plan to a new one. Rate limited to 1 change per calendar month. Validates that new tariff is available (same gid group). Calls Abills API, logs to admin_actions, and saves to PostgreSQL history (only on API success).',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'Tariff changed successfully',
+    type: ChangeTariffResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Bad request (user not found, tariff unavailable, same tariff, monthly limit exceeded, etc.)',
+  })
+  async changeTariff(
+    @Param('uid', ParseIntPipe) uid: number,
+    @Body() dto: ChangeTariffDto,
+  ): Promise<ChangeTariffResponseDto> {
+    return this.billingService.changeTariff(uid, dto.tpId);
   }
 }

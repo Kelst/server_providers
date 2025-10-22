@@ -25,6 +25,7 @@ export class NotificationsService {
   /**
    * Send notification with automatic fallback from Telegram to SMS
    * Logs all attempts to database
+   * Includes rate limiting for SMS to prevent spam
    */
   async sendNotification(dto: SendNotificationDto): Promise<SendNotificationResponseDto> {
     const { provider, chatId, phoneNumber, message, uid, metadata } = dto;
@@ -32,6 +33,16 @@ export class NotificationsService {
     // Validate that at least one delivery method is provided
     if (!chatId && !phoneNumber) {
       throw new Error('Either chatId or phoneNumber must be provided');
+    }
+
+    // Rate limiting for SMS (only if phoneNumber is provided and no chatId)
+    // This prevents SMS spam while allowing unlimited Telegram
+    if (phoneNumber && !chatId) {
+      const rateLimitCheck = await this.checkSmsRateLimit(phoneNumber, uid);
+      if (!rateLimitCheck.allowed) {
+        this.logger.warn(`SMS rate limit exceeded: ${rateLimitCheck.reason}`);
+        throw new Error(rateLimitCheck.reason);
+      }
     }
 
     let notificationLog = await this.createNotificationLog({
@@ -224,5 +235,64 @@ export class NotificationsService {
       fallback,
       successRate: total > 0 ? ((sent + fallback) / total) * 100 : 0,
     };
+  }
+
+  /**
+   * Check SMS rate limit to prevent spam
+   * Rules:
+   * - Max 5 SMS per phone number per hour
+   * - Max 10 SMS per UID per hour (if uid provided)
+   */
+  private async checkSmsRateLimit(
+    phoneNumber: string,
+    uid?: number,
+  ): Promise<{ allowed: boolean; reason?: string }> {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+    // Check 1: Max 5 SMS per phone number per hour
+    const smsCountByPhone = await this.prismaService.notificationLog.count({
+      where: {
+        recipient: phoneNumber,
+        type: NotificationType.SMS,
+        status: {
+          in: [NotificationStatus.SENT, NotificationStatus.FALLBACK],
+        },
+        createdAt: {
+          gte: oneHourAgo,
+        },
+      },
+    });
+
+    if (smsCountByPhone >= 5) {
+      return {
+        allowed: false,
+        reason: 'Перевищено ліміт SMS на цей номер (5 SMS за годину). Спробуйте пізніше',
+      };
+    }
+
+    // Check 2: Max 10 SMS per UID per hour (if uid is provided)
+    if (uid) {
+      const smsCountByUid = await this.prismaService.notificationLog.count({
+        where: {
+          uid,
+          type: NotificationType.SMS,
+          status: {
+            in: [NotificationStatus.SENT, NotificationStatus.FALLBACK],
+          },
+          createdAt: {
+            gte: oneHourAgo,
+          },
+        },
+      });
+
+      if (smsCountByUid >= 10) {
+        return {
+          allowed: false,
+          reason: 'Перевищено ліміт SMS для вашого акаунту (10 SMS за годину). Спробуйте пізніше',
+        };
+      }
+    }
+
+    return { allowed: true };
   }
 }

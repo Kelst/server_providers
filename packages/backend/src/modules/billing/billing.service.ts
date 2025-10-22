@@ -10,6 +10,11 @@ import { NotificationProvider } from '../notifications/enums/provider.enum';
 import { BillingLoginResponseDto } from './dto/billing-auth.dto';
 import { ReloadSessionResponseDto, SessionData, BillingApiRequest } from './dto/session-reload.dto';
 import { AddCreditResponseDto } from './dto/credit.dto';
+import {
+  PhoneLoginRequestResponseDto,
+  PhoneLoginVerifyResponseDto,
+} from './dto/phone-login.dto';
+import { ChangeTariffResponseDto } from './dto/change-tariff.dto';
 import { generateVerificationCode } from './helpers/verification-code.helper';
 import { normalizePhoneNumber, isValidUkrainianPhone } from './helpers/phone-normalize.helper';
 
@@ -43,12 +48,43 @@ export class BillingService {
   /**
    * Validate billing user credentials against Abills MySQL database
    * Uses DECODE function to decrypt password from database
+   * Includes rate limiting to prevent brute force attacks
    */
   async validateCredentials(
     login: string,
     password: string,
+    ip?: string,
   ): Promise<{ login: string; uid: number; company: string; status: number } | null> {
     try {
+      // Rate limiting: Check failed login attempts (5 failed attempts per login in 15 minutes)
+      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+      const failedAttempts = await this.prismaService.loginAttempt.count({
+        where: {
+          login,
+          success: false,
+          createdAt: {
+            gte: fifteenMinutesAgo,
+          },
+        },
+      });
+
+      if (failedAttempts >= 5) {
+        this.logger.warn(`Login rate limit exceeded for ${login}. Failed attempts: ${failedAttempts}`);
+
+        // Log this blocked attempt
+        await this.prismaService.loginAttempt.create({
+          data: {
+            login,
+            ip,
+            success: false,
+            failReason: 'Rate limit exceeded (5 failed attempts in 15 minutes)',
+          },
+        });
+
+        throw new UnauthorizedException('Забагато невдалих спроб входу. Спробуйте знову через 15 хвилин');
+      }
+
       const decodeKey = this.mysqlService.getDecodeKey();
 
       // Query Abills database with DECODE to get decrypted password
@@ -65,6 +101,17 @@ export class BillingService {
 
       if (!results || results.length === 0) {
         this.logger.warn(`Login attempt failed: user not found - ${login}`);
+
+        // Log failed attempt
+        await this.prismaService.loginAttempt.create({
+          data: {
+            login,
+            ip,
+            success: false,
+            failReason: 'User not found',
+          },
+        });
+
         return null;
       }
 
@@ -86,10 +133,48 @@ export class BillingService {
       // Compare decrypted password with provided password
       if (dbPassword !== inputPassword) {
         this.logger.warn(`Login attempt failed: invalid password - ${login}. DB: "${dbPassword}", Input: "${inputPassword}"`);
+
+        // Log failed attempt
+        await this.prismaService.loginAttempt.create({
+          data: {
+            login,
+            ip,
+            success: false,
+            failReason: 'Invalid password',
+          },
+        });
+
+        return null;
+      }
+
+      // Check if user status is active (status = 1 in config_gid)
+      if (user.status !== 1) {
+        this.logger.warn(`Login attempt failed: user inactive (status=${user.status}) - ${login}`);
+
+        // Log failed attempt
+        await this.prismaService.loginAttempt.create({
+          data: {
+            login,
+            ip,
+            success: false,
+            failReason: `User inactive (status=${user.status})`,
+          },
+        });
+
         return null;
       }
 
       this.logger.log(`User successfully authenticated: ${login} (uid: ${user.uid})`);
+
+      // Log successful attempt
+      await this.prismaService.loginAttempt.create({
+        data: {
+          login,
+          ip,
+          success: true,
+          failReason: null,
+        },
+      });
 
       return {
         login: user.id,
@@ -106,8 +191,8 @@ export class BillingService {
   /**
    * Login billing user (validate credentials and return user data with uid)
    */
-  async login(login: string, password: string): Promise<BillingLoginResponseDto> {
-    const userData = await this.validateCredentials(login, password);
+  async login(login: string, password: string, ip?: string): Promise<BillingLoginResponseDto> {
+    const userData = await this.validateCredentials(login, password, ip);
 
     if (!userData) {
       throw new UnauthorizedException('Invalid credentials');
@@ -448,6 +533,25 @@ export class BillingService {
         );
       }
 
+      // Rate limiting: Check recent phone change attempts (3 attempts per 15 minutes per UID)
+      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+      const recentAttempts = await this.prismaService.phoneChangeVerification.count({
+        where: {
+          uid,
+          createdAt: {
+            gte: fifteenMinutesAgo,
+          },
+        },
+      });
+
+      if (recentAttempts >= 3) {
+        this.logger.warn(`Phone change rate limit exceeded for uid ${uid}. Attempts: ${recentAttempts}`);
+        throw new BadRequestException(
+          'Ви перевищили ліміт спроб зміни номера телефону. Спробуйте знову через 15 хвилин',
+        );
+      }
+
       // 1. Get user data (login, oldPhone, company)
       const sqlUser = `
         SELECT u.id as login, c.company
@@ -640,6 +744,437 @@ export class BillingService {
       };
     } catch (error) {
       this.logger.error(`Error confirming phone change for uid ${uid}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Request phone login (send verification code via SMS/Telegram)
+   */
+  async requestPhoneLogin(phoneNumber: string, provider: NotificationProvider): Promise<PhoneLoginRequestResponseDto> {
+    try {
+      // 1. Normalize phone number to 380XXXXXXXXX format
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+      this.logger.log(`Phone login requested: ${phoneNumber} -> ${normalizedPhone}, provider: ${provider}`);
+
+      // 2. Validate phone number format
+      if (!isValidUkrainianPhone(normalizedPhone)) {
+        throw new BadRequestException(
+          'Невірний формат номера телефону. Очікується український номер (наприклад: +380671234567 або 0671234567)',
+        );
+      }
+
+      // 3. Rate limiting: Check recent attempts (3 attempts per 15 minutes)
+      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+      const recentAttempts = await this.prismaService.phoneLoginVerification.findMany({
+        where: {
+          phoneNumber: normalizedPhone,
+          provider: provider,
+          lastAttemptAt: {
+            gte: fifteenMinutesAgo,
+          },
+        },
+        orderBy: {
+          lastAttemptAt: 'desc',
+        },
+      });
+
+      // Count total attempts in last 15 minutes
+      const totalAttempts = recentAttempts.reduce((sum, record) => sum + record.attempts, 0);
+
+      if (totalAttempts >= 3) {
+        const oldestAttempt = recentAttempts[recentAttempts.length - 1];
+        const canRetryAt = new Date(oldestAttempt.lastAttemptAt.getTime() + 15 * 60 * 1000);
+
+        this.logger.warn(
+          `Rate limit exceeded for phone ${normalizedPhone}. Total attempts: ${totalAttempts}. Can retry at: ${canRetryAt.toISOString()}`,
+        );
+
+        return {
+          success: false,
+          message: `Ви перевищили ліміт спроб. Спробуйте знову через ${Math.ceil((canRetryAt.getTime() - Date.now()) / 60000)} хвилин`,
+          canRetryAt: canRetryAt.toISOString(),
+        };
+      }
+
+      // 4. Get company name from provider
+      const companyName = provider; // Provider enum values match company names
+
+      // 5. Get GIDs for the provider via CompanyService
+      const gids = await this.companyService.getGidsByCompany(companyName);
+
+      if (gids.length === 0) {
+        this.logger.warn(`No GIDs found for provider: ${provider}`);
+        throw new BadRequestException('Користувача не знайдено');
+      }
+
+      // 6. Find user in MySQL (with provider isolation)
+      const gidCondition = gids.map((gid) => `u.gid = ${gid}`).join(' OR ');
+
+      const sqlFindUser = `
+        SELECT u.uid, u.id as login, c.company, c.status
+        FROM users_contacts uc
+        JOIN users u ON u.uid = uc.uid
+        LEFT JOIN config_gid c ON u.gid = c.gid
+        WHERE uc.value = ?
+          AND uc.priority = '0'
+          AND (${gidCondition})
+          AND c.status = 1
+        LIMIT 1
+      `;
+
+      const userResult = await this.mysqlService.query<any[]>(sqlFindUser, [normalizedPhone]);
+
+      if (!userResult || userResult.length === 0) {
+        this.logger.warn(`User not found for phone ${normalizedPhone} and provider ${provider}`);
+        throw new BadRequestException('Користувача не знайдено');
+      }
+
+      const user = userResult[0];
+      this.logger.log(`User found: uid=${user.uid}, login=${user.login}, company=${user.company}`);
+
+      // 7. Get Telegram chatId if exists
+      let chatId: string | null = null;
+      const telegramTableName = this.companyService.getTelegramTableName(companyName);
+      // Process phone: 380951470082 -> 0951470082 (remove '38' prefix)
+      const processedPhone = normalizedPhone.startsWith('38') ? normalizedPhone.substring(2) : normalizedPhone;
+      const sqlChatId = `SELECT user_chat_id FROM ${telegramTableName} WHERE phone_number = ? AND state_notification = '1'`;
+
+      try {
+        const chatIdData = await this.mysqlService.query<any[]>(sqlChatId, [processedPhone]);
+        if (chatIdData && chatIdData.length > 0 && chatIdData[0].user_chat_id) {
+          chatId = String(chatIdData[0].user_chat_id);
+          this.logger.log(`Found Telegram chatId for uid ${user.uid}: ${chatId}`);
+        } else {
+          this.logger.log(`No Telegram chatId found for uid ${user.uid} in table ${telegramTableName}`);
+        }
+      } catch (error) {
+        this.logger.warn(`Error fetching chatId from ${telegramTableName}:`, error.message);
+      }
+
+      // 8. Generate verification code
+      const verificationCode = generateVerificationCode();
+
+      // 9. Calculate expiration (5 minutes from now)
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+      // 10. Delete old verification records for this phone+provider
+      await this.prismaService.phoneLoginVerification.deleteMany({
+        where: {
+          phoneNumber: normalizedPhone,
+          provider: provider,
+        },
+      });
+
+      // 11. Save to PostgreSQL
+      await this.prismaService.phoneLoginVerification.create({
+        data: {
+          phoneNumber: normalizedPhone,
+          provider: provider,
+          verificationCode,
+          uid: user.uid,
+          chatId,
+          attempts: 1,
+          lastAttemptAt: new Date(),
+          expiresAt,
+        },
+      });
+
+      // 12. Send notification (Telegram first if chatId exists, fallback to SMS)
+      const notificationMessage = `Код підтвердження для входу: ${verificationCode}`;
+
+      this.logger.log(
+        `Sending notification to uid ${user.uid}: ${chatId ? 'Telegram chatId=' + chatId : 'No Telegram'}, SMS phone=${normalizedPhone}, provider=${provider}`,
+      );
+
+      await this.notificationsService.sendNotification({
+        provider: provider,
+        chatId: chatId || undefined,
+        phoneNumber: normalizedPhone,
+        message: notificationMessage,
+        uid: user.uid,
+        metadata: {
+          action: 'phone_login_request',
+          provider: provider,
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Код підтвердження відправлено на ваш номер телефону',
+      };
+    } catch (error) {
+      this.logger.error(`Error requesting phone login for ${phoneNumber}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Verify phone login code and return user data
+   */
+  async verifyPhoneLogin(
+    phoneNumber: string,
+    provider: NotificationProvider,
+    code: string,
+  ): Promise<PhoneLoginVerifyResponseDto> {
+    try {
+      // 1. Normalize phone number
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+      this.logger.log(`Phone login verification for ${normalizedPhone}, provider: ${provider}, code: ${code}`);
+
+      // 2. Find verification record
+      const codeRecord = await this.prismaService.phoneLoginVerification.findFirst({
+        where: {
+          phoneNumber: normalizedPhone,
+          provider: provider,
+          verificationCode: code,
+          expiresAt: {
+            gte: new Date(), // Not expired
+          },
+        },
+        orderBy: {
+          createdAt: 'desc', // Get most recent
+        },
+      });
+
+      if (!codeRecord) {
+        this.logger.warn(`Invalid or expired code for phone ${normalizedPhone}, provider ${provider}`);
+        return {
+          success: false,
+          message: 'Невірний код або час дії коду закінчився',
+        };
+      }
+
+      // 3. Get user data from MySQL
+      const sqlGetUser = `
+        SELECT u.uid, u.id as login, c.company, c.status
+        FROM users u
+        LEFT JOIN config_gid c ON u.gid = c.gid
+        WHERE u.uid = ?
+      `;
+
+      const userResult = await this.mysqlService.query<any[]>(sqlGetUser, [codeRecord.uid]);
+
+      if (!userResult || userResult.length === 0) {
+        throw new BadRequestException('Користувача не знайдено');
+      }
+
+      const user = userResult[0];
+
+      // 4. Delete used code
+      await this.prismaService.phoneLoginVerification.delete({
+        where: { id: codeRecord.id },
+      });
+
+      this.logger.log(`Phone login successful for uid ${user.uid} (${user.login})`);
+
+      return {
+        success: true,
+        uid: user.uid,
+        login: user.login,
+        company: user.company,
+        status: user.status,
+        message: 'Успішно автентифіковано',
+      };
+    } catch (error) {
+      this.logger.error(`Error verifying phone login for ${phoneNumber}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Change tariff plan for user
+   *
+   * Rate limiting: User can change tariff only once per calendar month
+   * Validates that new tariff is available for user (same gid group)
+   * Calls Abills API to perform tariff change
+   * Logs to admin_actions and saves to PostgreSQL history (only on success)
+   */
+  async changeTariff(uid: number, newTpId: number): Promise<ChangeTariffResponseDto> {
+    try {
+      this.logger.log(`Starting tariff change for uid ${uid} to tp_id ${newTpId}`);
+
+      // 1. Get current date for monthly rate limiting
+      const now = new Date();
+      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const firstDayOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+      // 2. Check rate limiting: only 1 tariff change per calendar month
+      const recentChange = await this.prismaService.tariffChangeHistory.findFirst({
+        where: {
+          uid,
+          changedAt: {
+            gte: firstDayOfMonth,
+            lt: firstDayOfNextMonth,
+          },
+        },
+        orderBy: {
+          changedAt: 'desc',
+        },
+      });
+
+      if (recentChange) {
+        const nextAllowedDate = firstDayOfNextMonth;
+        throw new BadRequestException(
+          `Ви вже змінювали тарифний план цього місяця. Наступна зміна можлива з ${nextAllowedDate.toISOString().split('T')[0]}`,
+        );
+      }
+
+      // 3. Get user basic info (login, company) from MySQL
+      const sqlGetUser = `
+        SELECT u.id as login, u.gid, c.company
+        FROM users u
+        LEFT JOIN config_gid c ON u.gid = c.gid
+        WHERE u.uid = ?
+      `;
+
+      const userResult = await this.mysqlService.query<any[]>(sqlGetUser, [uid]);
+
+      if (!userResult || userResult.length === 0) {
+        throw new BadRequestException('Користувача не знайдено');
+      }
+
+      const user = userResult[0];
+      const login = user.login;
+      const gid = user.gid;
+
+      // 4. Get current internet info (tp_id and internet_id)
+      const sqlGetInternet = `
+        SELECT im.id as internet_id, im.tp_id, tp.name as current_tariff_name
+        FROM internet_main im
+        LEFT JOIN tarif_plans tp ON im.tp_id = tp.tp_id
+        WHERE im.uid = ?
+      `;
+
+      const internetResult = await this.mysqlService.query<any[]>(sqlGetInternet, [uid]);
+
+      if (!internetResult || internetResult.length === 0) {
+        throw new BadRequestException('Інтернет-підключення не знайдено');
+      }
+
+      const internet = internetResult[0];
+      const currentTpId = internet.tp_id;
+      const internetId = internet.internet_id;
+      const currentTariffName = internet.current_tariff_name || 'Unknown';
+
+      // 5. Check if trying to change to the same tariff
+      if (currentTpId === newTpId) {
+        throw new BadRequestException('Неможливо змінити тариф на той самий, що й зараз');
+      }
+
+      // 6. Get available tariffs (validate that newTpId is available)
+      const sqlGetAvailable = `
+        SELECT tp_id FROM tarif_plans
+        WHERE gid IN (
+          SELECT gid FROM tarif_plans
+          WHERE tp_id = ?
+        )
+        AND status = '0'
+        AND module = 'Internet'
+      `;
+
+      const availableTariffs = await this.mysqlService.query<any[]>(sqlGetAvailable, [currentTpId]);
+      const availableTpIds = availableTariffs.map((t) => t.tp_id);
+
+      if (!availableTpIds.includes(newTpId)) {
+        throw new BadRequestException(
+          'Обраний тарифний план недоступний для вашого підключення',
+        );
+      }
+
+      // Get new tariff name
+      const sqlGetNewTariff = `
+        SELECT name FROM tarif_plans WHERE tp_id = ?
+      `;
+
+      const newTariffResult = await this.mysqlService.query<any[]>(sqlGetNewTariff, [newTpId]);
+
+      if (!newTariffResult || newTariffResult.length === 0) {
+        throw new BadRequestException('Тарифний план не знайдено');
+      }
+
+      const newTariffName = newTariffResult[0].name;
+
+      // 7. Call Abills API to change tariff
+      const billingApiUrl = this.configService.get<string>('billing.apiUrl');
+      const billingApiKey = this.configService.get<string>('billing.apiKey');
+
+      if (!billingApiUrl || !billingApiKey) {
+        this.logger.error('Billing API credentials not configured');
+        throw new BadRequestException('Помилка конфігурації сервера');
+      }
+
+      const apiUrl = `${billingApiUrl}/api.cgi/internet/${uid}/`;
+      const requestData = {
+        id: internetId,
+        tpId: newTpId,
+      };
+
+      this.logger.log(`Calling Abills API: ${apiUrl} with data: ${JSON.stringify(requestData)}`);
+
+      const fetch = (await import('node-fetch')).default;
+      const response = await fetch(apiUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'KEY': billingApiKey,
+        },
+        body: JSON.stringify(requestData),
+      });
+
+      const responseData = await response.json();
+      this.logger.log(`Abills API response status: ${response.status}, data: ${JSON.stringify(responseData)}`);
+
+      if (!response.ok || responseData.result !== 'OK') {
+        this.logger.error(`Abills API failed: ${response.status} - ${JSON.stringify(responseData)}`);
+        throw new BadRequestException('Помилка при зміні тарифу в біллінгу');
+      }
+
+      // 8. Log to admin_actions in MySQL
+      const currentDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      const adminActionIp = this.configService.get<string>('billing.adminActionIp');
+      const adminActionAid = this.configService.get<string>('billing.adminActionAid');
+
+      const sqlAdminAction = `
+        INSERT INTO admin_actions (actions, datetime, ip, uid, aid, module, action_type)
+        VALUES (?, ?, ?, ?, ?, '', 2)
+      `;
+
+      const actionText = `Тарифний план змінено з особистого кабінету ${currentTariffName} -> ${newTariffName}`;
+
+      await this.mysqlService.query(sqlAdminAction, [actionText, currentDate, adminActionIp, uid, adminActionAid]);
+
+      this.logger.log(`Admin action logged: ${actionText}`);
+
+      // 9. Save to PostgreSQL tariff change history (only if API succeeded)
+      const changeRecord = await this.prismaService.tariffChangeHistory.create({
+        data: {
+          uid,
+          login,
+          oldTpId: currentTpId,
+          oldTariffName: currentTariffName,
+          newTpId,
+          newTariffName,
+          internetId,
+        },
+      });
+
+      this.logger.log(`Tariff change saved to history: ${changeRecord.id}`);
+
+      return {
+        success: true,
+        message: 'Тариф успішно змінено',
+        oldTpId: currentTpId,
+        oldTariffName: currentTariffName,
+        newTpId,
+        newTariffName,
+        changedAt: changeRecord.changedAt,
+      };
+    } catch (error) {
+      this.logger.error(`Error changing tariff for uid ${uid}:`, error);
       throw error;
     }
   }

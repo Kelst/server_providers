@@ -13,6 +13,7 @@ import {
 } from './dto/user-info.dto';
 import { FeesResponseDto, FeeItemDto } from './dto/fees.dto';
 import { PaymentsResponseDto, PaymentItemDto } from './dto/payments.dto';
+import { AvailableTariffsResponseDto, AvailableTariffDto } from './dto/available-tariffs.dto';
 import { intToIp } from './helpers/ip.helper';
 import { convertDataFromDB, formatTime, getDifference } from './helpers/data.helper';
 import { processPhoneNumber, getLowestPriorityValue } from './helpers/phone.helper';
@@ -614,6 +615,75 @@ export class UserDataService {
       };
     } catch (error) {
       this.logger.error(`Error getting full user data for uid ${uid}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get available tariffs for user (excluding current tariff)
+   * Returns tariffs from the same gid group, filtered by status='0' and module='Internet'
+   * Sorted by speed (descending)
+   */
+  async getAvailableTariffs(uid: number): Promise<AvailableTariffsResponseDto> {
+    try {
+      this.logger.log(`Getting available tariffs for uid ${uid}`);
+
+      // 1. Get current tariff plan ID
+      const sqlCurrentTp = `SELECT tp_id FROM internet_main WHERE uid = ?`;
+      const currentTpData = await this.mysqlService.query<any[]>(sqlCurrentTp, [uid]);
+
+      if (!currentTpData || currentTpData.length === 0 || !currentTpData[0].tp_id) {
+        throw new NotFoundException(`User ${uid} does not have a tariff plan assigned`);
+      }
+
+      const currentTpId = currentTpData[0].tp_id;
+      this.logger.log(`Current tariff plan ID for uid ${uid}: ${currentTpId}`);
+
+      // 2. Get available tariffs (same gid group, status='0', module='Internet', excluding current)
+      const sqlAvailableTariffs = `
+        SELECT
+          tp.tp_id,
+          tp.name,
+          tp.month_fee,
+          tt.in_speed
+        FROM tarif_plans tp
+        JOIN trafic_tarifs tt ON tp.tp_id = tt.tp_id
+        WHERE tp.gid IN (
+          SELECT gid FROM tarif_plans
+          WHERE tp_id = ?
+        )
+        AND tp.status = '0'
+        AND tp.module = 'Internet'
+        AND tp.tp_id != ?
+        ORDER BY tt.in_speed DESC
+      `;
+
+      const tariffsData = await this.mysqlService.query<any[]>(sqlAvailableTariffs, [
+        currentTpId,
+        currentTpId,
+      ]);
+
+      this.logger.log(`Found ${tariffsData.length} available tariffs for uid ${uid}`);
+
+      // 3. Process tariffs and calculate speed
+      const available: AvailableTariffDto[] = tariffsData.map((row) => {
+        const speedInMbps = row.in_speed / 1024;
+        const tariffExtentionSpeed = speedInMbps >= 950 ? 1000 : speedInMbps;
+
+        return {
+          tp_id: row.tp_id,
+          name: row.name,
+          month_fee: row.month_fee,
+          tariffExtentionSpeed,
+        };
+      });
+
+      return {
+        available,
+        currentTpId,
+      };
+    } catch (error) {
+      this.logger.error(`Error getting available tariffs for uid ${uid}:`, error);
       throw error;
     }
   }
