@@ -22,10 +22,15 @@ export class AnalyticsController {
   @ApiResponse({ status: 200, description: 'Requests timeline retrieved' })
   getRequestsOverTime(
     @Request() req,
-    @Query('days') days?: string,
+    @Query('period') period?: string,
     @Query('tokenId') tokenId?: string,
   ) {
-    const daysNum = days ? parseInt(days, 10) : 7;
+    // Parse period to days: '24h' => 1, '7d' => 7, '30d' => 30
+    let daysNum = 7; // default
+    if (period === '24h') daysNum = 1;
+    else if (period === '7d') daysNum = 7;
+    else if (period === '30d') daysNum = 30;
+
     return this.analyticsService.getRequestsOverTime(
       req.user.id,
       daysNum,
@@ -73,5 +78,27 @@ export class AnalyticsController {
   @ApiResponse({ status: 404, description: 'Token not found' })
   getTokenAuditLog(@Param('tokenId') tokenId: string, @Request() req) {
     return this.analyticsService.getTokenAuditLog(tokenId, req.user.id);
+  }
+
+  @Get('audit-logs')
+  @ApiOperation({ summary: 'Get all audit logs with pagination' })
+  @ApiResponse({ status: 200, description: 'Audit logs retrieved' })
+  getAllAuditLogs(
+    @Request() req,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('tokenId') tokenId?: string,
+    @Query('action') action?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 25;
+
+    return this.analyticsService.getAllAuditLogs(
+      req.user.id,
+      pageNum,
+      limitNum,
+      tokenId,
+      action,
+    );
   }
 }

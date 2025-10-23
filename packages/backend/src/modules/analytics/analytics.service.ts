@@ -14,30 +14,43 @@ export class AnalyticsService {
 
     const tokenIds = tokens.map((t) => t.id);
 
-    const [totalRequests, totalTokens, last24hRequests] = await Promise.all([
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const [totalRequests, activeTokens, errorRequests, rateLimitEventsCount] = await Promise.all([
       this.prisma.apiRequest.count({
-        where: { tokenId: { in: tokenIds } },
+        where: {
+          tokenId: { in: tokenIds },
+          createdAt: { gte: twentyFourHoursAgo },
+        },
       }),
       this.prisma.apiToken.count({
-        where: { createdBy: userId },
+        where: {
+          createdBy: userId,
+          isActive: true,
+        },
       }),
       this.prisma.apiRequest.count({
         where: {
           tokenId: { in: tokenIds },
-          createdAt: {
-            gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
-          },
+          createdAt: { gte: twentyFourHoursAgo },
+          statusCode: { gte: 400 },
+        },
+      }),
+      this.prisma.rateLimitEvent.count({
+        where: {
+          tokenId: { in: tokenIds },
+          blockedAt: { gte: twentyFourHoursAgo },
         },
       }),
     ]);
 
-    const successRate = await this.getSuccessRate(tokenIds);
+    const errorRate = totalRequests > 0 ? errorRequests / totalRequests : 0;
 
     return {
       totalRequests,
-      totalTokens,
-      last24hRequests,
-      successRate,
+      activeTokens,
+      errorRate,
+      rateLimitEvents: rateLimitEventsCount,
     };
   }
 
@@ -55,17 +68,34 @@ export class AnalyticsService {
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
+    startDate.setHours(0, 0, 0, 0);
 
-    const requests = await this.prisma.apiRequest.groupBy({
-      by: ['createdAt'],
+    // Get all requests in the period
+    const requests = await this.prisma.apiRequest.findMany({
       where: {
         tokenId: { in: tokenIds },
         createdAt: { gte: startDate },
       },
-      _count: true,
+      select: {
+        createdAt: true,
+      },
     });
 
-    return requests;
+    // Group by date (not datetime)
+    const groupedByDate = requests.reduce((acc, req) => {
+      const dateStr = req.createdAt.toISOString().split('T')[0];
+      if (!acc[dateStr]) {
+        acc[dateStr] = 0;
+      }
+      acc[dateStr]++;
+      return acc;
+    }, {} as Record<string, number>);
+
+    // Convert to array format expected by frontend
+    return Object.entries(groupedByDate).map(([date, count]) => ({
+      date,
+      count,
+    })).sort((a, b) => a.date.localeCompare(b.date));
   }
 
   async getTopEndpoints(userId: string, limit: number = 10) {
@@ -76,10 +106,14 @@ export class AnalyticsService {
 
     const tokenIds = tokens.map((t) => t.id);
 
+    // Get endpoint stats with method and avgResponseTime
     const endpoints = await this.prisma.apiRequest.groupBy({
-      by: ['endpoint'],
+      by: ['endpoint', 'method'],
       where: { tokenId: { in: tokenIds } },
       _count: true,
+      _avg: {
+        responseTime: true,
+      },
       orderBy: {
         _count: {
           endpoint: 'desc',
@@ -88,7 +122,12 @@ export class AnalyticsService {
       take: limit,
     });
 
-    return endpoints;
+    return endpoints.map(ep => ({
+      endpoint: ep.endpoint,
+      method: ep.method,
+      count: ep._count,
+      avgResponseTime: Math.round(ep._avg.responseTime || 0),
+    }));
   }
 
   async getErrorStats(userId: string) {
@@ -99,21 +138,34 @@ export class AnalyticsService {
 
     const tokenIds = tokens.map((t) => t.id);
 
-    const errors = await this.prisma.apiRequest.groupBy({
-      by: ['statusCode'],
+    // Get actual error request details, not just counts
+    const errors = await this.prisma.apiRequest.findMany({
       where: {
         tokenId: { in: tokenIds },
         statusCode: { gte: 400 },
       },
-      _count: true,
-      orderBy: {
-        _count: {
-          statusCode: 'desc',
-        },
+      select: {
+        id: true,
+        endpoint: true,
+        method: true,
+        statusCode: true,
+        errorMessage: true,
+        createdAt: true,
       },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 100,
     });
 
-    return errors;
+    return errors.map(err => ({
+      id: err.id,
+      endpoint: err.endpoint,
+      method: err.method,
+      statusCode: err.statusCode,
+      message: err.errorMessage || `HTTP ${err.statusCode}`,
+      timestamp: err.createdAt.toISOString(),
+    }));
   }
 
   private async getSuccessRate(tokenIds: string[]): Promise<number> {
@@ -422,6 +474,69 @@ export class AnalyticsService {
       totalEvents,
       last24h,
       topOffenders: topOffendersWithDetails,
+    };
+  }
+
+  /**
+   * Get all audit logs with pagination and filters
+   */
+  async getAllAuditLogs(
+    userId: string,
+    page: number = 1,
+    limit: number = 25,
+    tokenId?: string,
+    action?: string,
+  ) {
+    // Get user's tokens
+    const tokens = await this.prisma.apiToken.findMany({
+      where: { createdBy: userId },
+      select: { id: true },
+    });
+
+    const tokenIds = tokens.map((t) => t.id);
+
+    // Build where clause
+    const where: any = {
+      tokenId: tokenId ? tokenId : { in: tokenIds },
+    };
+
+    if (action) {
+      where.action = action;
+    }
+
+    // Get total count
+    const total = await this.prisma.tokenAuditLog.count({ where });
+
+    // Get paginated logs
+    const logs = await this.prisma.tokenAuditLog.findMany({
+      where,
+      include: {
+        admin: {
+          select: {
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        token: {
+          select: {
+            projectName: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    return {
+      data: logs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 }

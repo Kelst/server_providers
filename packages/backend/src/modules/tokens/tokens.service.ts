@@ -201,20 +201,36 @@ export class TokensService {
       return null;
     }
 
-    const [totalRequests, recentRequests] = await Promise.all([
-      this.prisma.apiRequest.count({
-        where: { tokenId: id },
-      }),
-      this.prisma.apiRequest.findMany({
-        where: { tokenId: id },
-        orderBy: { createdAt: 'desc' },
-        take: 100,
-      }),
-    ]);
+    const requests = await this.prisma.apiRequest.findMany({
+      where: { tokenId: id },
+      select: {
+        statusCode: true,
+        responseTime: true,
+        createdAt: true,
+      },
+    });
+
+    const totalRequests = requests.length;
+    const successfulRequests = requests.filter(r => r.statusCode < 400).length;
+    const errorRequests = requests.filter(r => r.statusCode >= 400).length;
+
+    const successRate = totalRequests > 0 ? successfulRequests / totalRequests : 0;
+    const errorRate = totalRequests > 0 ? errorRequests / totalRequests : 0;
+
+    const avgResponseTime = totalRequests > 0
+      ? requests.reduce((sum, r) => sum + (r.responseTime || 0), 0) / totalRequests
+      : 0;
+
+    const lastUsed = requests.length > 0
+      ? requests.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0].createdAt
+      : null;
 
     return {
       totalRequests,
-      recentRequests,
+      successRate,
+      errorRate,
+      avgResponseTime: Math.round(avgResponseTime),
+      lastUsed: lastUsed ? lastUsed.toISOString() : undefined,
     };
   }
 
