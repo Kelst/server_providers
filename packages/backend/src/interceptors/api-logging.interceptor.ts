@@ -17,9 +17,11 @@ export class ApiLoggingInterceptor implements NestInterceptor {
     const response = context.switchToHttp().getResponse();
     const startTime = Date.now();
 
-    // Only log requests with API token (from shared-api endpoints)
+    // Only log requests with API token (from API token authenticated endpoints)
+    // Skip JWT authenticated requests (admin panel requests)
     const apiToken = request.user;
-    if (!apiToken || !apiToken.id) {
+    if (!apiToken || !apiToken.id || !apiToken.token || !apiToken.tokenHash) {
+      // This is either not authenticated or JWT authenticated (admin)
       return next.handle();
     }
 

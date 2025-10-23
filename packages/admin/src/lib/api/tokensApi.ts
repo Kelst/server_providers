@@ -30,4 +30,33 @@ export const tokensApi = {
     const { data } = await apiClient.get<TokenStats>(`/tokens/${id}/stats`);
     return data;
   },
+
+  async regenerate(id: string, reason?: string): Promise<ApiToken> {
+    const { data } = await apiClient.post<ApiToken>(`/tokens/${id}/regenerate`, { reason });
+    return data;
+  },
+
+  async getRotationHistory(id: string): Promise<any[]> {
+    const { data } = await apiClient.get(`/tokens/${id}/rotation-history`);
+    return data;
+  },
+
+  async createIpRule(id: string, ruleData: { type: 'WHITELIST' | 'BLACKLIST'; ipAddress: string; description?: string }): Promise<any> {
+    const { data } = await apiClient.post(`/tokens/${id}/ip-rules`, ruleData);
+    return data;
+  },
+
+  async getIpRules(id: string): Promise<any[]> {
+    const { data } = await apiClient.get(`/tokens/${id}/ip-rules`);
+    return data;
+  },
+
+  async deleteIpRule(id: string, ruleId: string): Promise<void> {
+    await apiClient.delete(`/tokens/${id}/ip-rules/${ruleId}`);
+  },
+
+  async getSecurityLog(id: string): Promise<any[]> {
+    const { data } = await apiClient.get(`/tokens/${id}/security-log`);
+    return data;
+  },
 };

@@ -1,7 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { CreateTokenDto } from './dto/create-token.dto';
 import { UpdateTokenDto } from './dto/update-token.dto';
+import { CreateIpRuleDto } from './dto/create-ip-rule.dto';
+import { RegenerateTokenDto } from './dto/regenerate-token.dto';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 
@@ -291,5 +293,242 @@ export class TokensService {
     }
 
     return Object.keys(changes).length > 0 ? changes : null;
+  }
+
+  /**
+   * Regenerate token (create new token value, keep all settings)
+   */
+  async regenerate(id: string, regenerateDto: RegenerateTokenDto, userId: string, ipAddress?: string, userAgent?: string) {
+    const oldToken = await this.prisma.apiToken.findFirst({
+      where: {
+        id,
+        createdBy: userId,
+      },
+    });
+
+    if (!oldToken) {
+      throw new NotFoundException('Token not found');
+    }
+
+    // Generate new token
+    const newTokenValue = 'tk_' + randomBytes(32).toString('hex');
+    const newTokenHash = await bcrypt.hash(newTokenValue, 10);
+
+    // Store old token hash in rotation history
+    await this.prisma.tokenRotationHistory.create({
+      data: {
+        tokenId: id,
+        oldTokenHash: oldToken.tokenHash,
+        reason: regenerateDto.reason,
+        rotatedBy: userId,
+        ipAddress: ipAddress || 'unknown',
+        userAgent: userAgent || null,
+      },
+    });
+
+    // Update token with new values
+    const updatedToken = await this.prisma.apiToken.update({
+      where: { id },
+      data: {
+        token: newTokenValue,
+        tokenHash: newTokenHash,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    // Log audit event
+    await this.logAudit(
+      id,
+      userId,
+      'regenerated',
+      {
+        reason: regenerateDto.reason || 'Token regenerated',
+      },
+      ipAddress,
+      userAgent,
+    );
+
+    this.logger.log(`Token regenerated: id=${id}, admin=${userId}`);
+
+    // Return new token value (only shown once)
+    return {
+      ...updatedToken,
+      token: newTokenValue,
+    };
+  }
+
+  /**
+   * Get token rotation history
+   */
+  async getRotationHistory(id: string, userId: string) {
+    const token = await this.prisma.apiToken.findFirst({
+      where: {
+        id,
+        createdBy: userId,
+      },
+    });
+
+    if (!token) {
+      throw new NotFoundException('Token not found');
+    }
+
+    return this.prisma.tokenRotationHistory.findMany({
+      where: { tokenId: id },
+      include: {
+        rotator: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      orderBy: { rotatedAt: 'desc' },
+    });
+  }
+
+  /**
+   * Create IP rule for token
+   */
+  async createIpRule(tokenId: string, createIpRuleDto: CreateIpRuleDto, userId: string) {
+    // Verify token belongs to user
+    const token = await this.prisma.apiToken.findFirst({
+      where: {
+        id: tokenId,
+        createdBy: userId,
+      },
+    });
+
+    if (!token) {
+      throw new NotFoundException('Token not found');
+    }
+
+    // Check for duplicate IP rule
+    const existing = await this.prisma.ipRule.findFirst({
+      where: {
+        tokenId,
+        ipAddress: createIpRuleDto.ipAddress,
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException('IP rule already exists for this token');
+    }
+
+    return this.prisma.ipRule.create({
+      data: {
+        tokenId,
+        type: createIpRuleDto.type,
+        ipAddress: createIpRuleDto.ipAddress,
+        description: createIpRuleDto.description,
+        createdBy: userId,
+      },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Get all IP rules for a token
+   */
+  async getIpRules(tokenId: string, userId: string) {
+    const token = await this.prisma.apiToken.findFirst({
+      where: {
+        id: tokenId,
+        createdBy: userId,
+      },
+    });
+
+    if (!token) {
+      throw new NotFoundException('Token not found');
+    }
+
+    return this.prisma.ipRule.findMany({
+      where: { tokenId },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Delete IP rule
+   */
+  async deleteIpRule(tokenId: string, ruleId: string, userId: string) {
+    // Verify token belongs to user
+    const token = await this.prisma.apiToken.findFirst({
+      where: {
+        id: tokenId,
+        createdBy: userId,
+      },
+    });
+
+    if (!token) {
+      throw new NotFoundException('Token not found');
+    }
+
+    // Verify rule belongs to this token
+    const rule = await this.prisma.ipRule.findFirst({
+      where: {
+        id: ruleId,
+        tokenId,
+      },
+    });
+
+    if (!rule) {
+      throw new NotFoundException('IP rule not found');
+    }
+
+    return this.prisma.ipRule.delete({
+      where: { id: ruleId },
+    });
+  }
+
+  /**
+   * Get security events for a token
+   */
+  async getSecurityLog(tokenId: string, userId: string, limit = 100) {
+    const token = await this.prisma.apiToken.findFirst({
+      where: {
+        id: tokenId,
+        createdBy: userId,
+      },
+    });
+
+    if (!token) {
+      throw new NotFoundException('Token not found');
+    }
+
+    return this.prisma.securityEvent.findMany({
+      where: { tokenId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
   }
 }

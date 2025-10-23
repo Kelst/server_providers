@@ -71,4 +71,24 @@ export const analyticsApi = {
     const { data } = await apiClient.get('/analytics/audit-logs', { params });
     return data;
   },
+
+  async getRealtimeMetrics(): Promise<any> {
+    const { data } = await apiClient.get('/analytics/realtime');
+    return data;
+  },
+
+  async getPerformanceMetrics(days: number = 7): Promise<any> {
+    const { data } = await apiClient.get(`/analytics/performance?days=${days}`);
+    return data;
+  },
+
+  async getAnomalies(days: number = 7): Promise<any[]> {
+    const { data } = await apiClient.get(`/analytics/anomalies?days=${days}`);
+    return data;
+  },
+
+  async getTrends(days: number = 7): Promise<any> {
+    const { data } = await apiClient.get(`/analytics/trends?days=${days}`);
+    return data;
+  },
 };

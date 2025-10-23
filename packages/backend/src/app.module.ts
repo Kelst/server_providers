@@ -8,6 +8,7 @@ import { DatabaseModule } from './modules/database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { TokensModule } from './modules/tokens/tokens.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { SecurityModule } from './modules/security/security.module';
 import { SharedApiModule } from './modules/shared-api/shared-api.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { CommonModule } from './common/common.module';
@@ -35,6 +36,7 @@ import validationSchema from './config/validation.schema';
     AuthModule,
     TokensModule,
     AnalyticsModule,
+    SecurityModule,
     SharedApiModule,
     BillingModule,
   ],

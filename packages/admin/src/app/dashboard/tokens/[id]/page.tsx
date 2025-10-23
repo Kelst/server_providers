@@ -19,6 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, ArrowLeft, Save, Eye, EyeOff, Copy, Check, Key } from 'lucide-react';
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { SecurityTab } from '@/components/tokens/SecurityTab';
 
 const SCOPES = [
   { value: ApiScope.BILLING, label: 'Billing', description: 'Access billing endpoints' },
@@ -184,6 +185,7 @@ export default function TokenDetailsPage() {
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="statistics" onClick={loadStats}>Statistics</TabsTrigger>
+            <TabsTrigger value="security">Security</TabsTrigger>
             <TabsTrigger value="audit" onClick={loadAuditLogs}>Audit Log</TabsTrigger>
           </TabsList>
 
@@ -450,6 +452,11 @@ export default function TokenDetailsPage() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Security Tab */}
+          <TabsContent value="security">
+            <SecurityTab tokenId={tokenId} />
           </TabsContent>
         </Tabs>
       </div>

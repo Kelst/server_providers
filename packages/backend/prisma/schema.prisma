@@ -21,8 +21,10 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  tokens       ApiToken[]
-  auditLogs    TokenAuditLog[]
+  tokens              ApiToken[]
+  auditLogs           TokenAuditLog[]
+  ipRules             IpRule[]
+  tokenRotations      TokenRotationHistory[]
 
   @@map("users")
 }
@@ -48,11 +50,14 @@ model ApiToken {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  user            User              @relation(fields: [createdBy], references: [id])
-  requests        ApiRequest[]
-  rateLimits      RateLimit[]
-  rateLimitEvents RateLimitEvent[]
-  auditLogs       TokenAuditLog[]
+  user              User                   @relation(fields: [createdBy], references: [id])
+  requests          ApiRequest[]
+  rateLimits        RateLimit[]
+  rateLimitEvents   RateLimitEvent[]
+  auditLogs         TokenAuditLog[]
+  ipRules           IpRule[]
+  securityEvents    SecurityEvent[]
+  rotationHistory   TokenRotationHistory[]
 
   @@index([tokenHash])
   @@index([isActive])
@@ -286,5 +291,79 @@ model TokenAuditLog {
   @@index([createdAt])
   @@index([action])
   @@map("token_audit_log")
+}
+
+// IP Rules for Token Security (whitelist/blacklist)
+model IpRule {
+  id          String     @id @default(uuid())
+  tokenId     String     @map("token_id")
+  type        IpRuleType // WHITELIST or BLACKLIST
+  ipAddress   String     @map("ip_address") @db.VarChar(45)
+  description String?    @db.Text
+  createdBy   String     @map("created_by")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  token       ApiToken   @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  creator     User       @relation(fields: [createdBy], references: [id])
+
+  @@unique([tokenId, ipAddress])
+  @@index([tokenId])
+  @@index([ipAddress])
+  @@index([type])
+  @@map("ip_rules")
+}
+
+enum IpRuleType {
+  WHITELIST
+  BLACKLIST
+}
+
+// Security Events (блокування, підозріла активність)
+model SecurityEvent {
+  id         String            @id @default(uuid())
+  tokenId    String?           @map("token_id")
+  eventType  SecurityEventType // BLOCKED_IP, FAILED_AUTH, SUSPICIOUS_ACTIVITY
+  ipAddress  String            @map("ip_address") @db.VarChar(45)
+  endpoint   String?
+  method     String?           @db.VarChar(10)
+  statusCode Int?              @map("status_code")
+  details    Json?             // Додаткова інформація про подію
+  userAgent  String?           @map("user_agent") @db.Text
+  createdAt  DateTime          @default(now()) @map("created_at")
+
+  token      ApiToken?         @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  @@index([tokenId])
+  @@index([eventType])
+  @@index([ipAddress])
+  @@index([createdAt])
+  @@map("security_events")
+}
+
+enum SecurityEventType {
+  BLOCKED_IP
+  FAILED_AUTH
+  SUSPICIOUS_ACTIVITY
+  RATE_LIMIT_ABUSE
+}
+
+// Token Rotation History (історія перегенерації токенів)
+model TokenRotationHistory {
+  id           String   @id @default(uuid())
+  tokenId      String   @map("token_id")
+  oldTokenHash String   @map("old_token_hash") @db.VarChar(64)
+  reason       String?  @db.Text
+  rotatedBy    String   @map("rotated_by")
+  ipAddress    String   @map("ip_address") @db.VarChar(45)
+  userAgent    String?  @map("user_agent") @db.Text
+  rotatedAt    DateTime @default(now()) @map("rotated_at")
+
+  token        ApiToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  rotator      User     @relation(fields: [rotatedBy], references: [id])
+
+  @@index([tokenId])
+  @@index([rotatedAt])
+  @@map("token_rotation_history")
 }
 

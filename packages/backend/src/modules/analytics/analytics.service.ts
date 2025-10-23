@@ -539,4 +539,411 @@ export class AnalyticsService {
       },
     };
   }
+
+  /**
+   * Get real-time metrics (last 5 minutes with auto-refresh capability)
+   */
+  async getRealtimeMetrics(userId: string) {
+    const tokens = await this.prisma.apiToken.findMany({
+      where: { createdBy: userId },
+      select: { id: true, projectName: true, isActive: true },
+    });
+
+    const tokenIds = tokens.map((t) => t.id);
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+    const [recentRequests, recentErrors, activeRequests] = await Promise.all([
+      // Requests in last 5 minutes
+      this.prisma.apiRequest.findMany({
+        where: {
+          tokenId: { in: tokenIds },
+          createdAt: { gte: fiveMinutesAgo },
+        },
+        select: {
+          createdAt: true,
+          statusCode: true,
+          responseTime: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+
+      // Errors in last 5 minutes
+      this.prisma.apiRequest.count({
+        where: {
+          tokenId: { in: tokenIds },
+          createdAt: { gte: fiveMinutesAgo },
+          statusCode: { gte: 400 },
+        },
+      }),
+
+      // Current active tokens with recent activity
+      this.prisma.apiToken.findMany({
+        where: {
+          createdBy: userId,
+          isActive: true,
+          requests: {
+            some: {
+              createdAt: { gte: fiveMinutesAgo },
+            },
+          },
+        },
+        select: {
+          id: true,
+          projectName: true,
+          _count: {
+            select: {
+              requests: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    // Calculate requests per second
+    const requestsPerSecond = recentRequests.length / 300; // 300 seconds = 5 minutes
+
+    // Calculate errors per second
+    const errorsPerSecond = recentErrors / 300;
+
+    // Calculate average response time
+    const avgResponseTime = recentRequests.length > 0
+      ? recentRequests.reduce((sum, r) => sum + r.responseTime, 0) / recentRequests.length
+      : 0;
+
+    // Group requests by minute for chart
+    const requestsByMinute = recentRequests.reduce((acc, req) => {
+      const minute = new Date(req.createdAt);
+      minute.setSeconds(0, 0);
+      const key = minute.toISOString();
+
+      if (!acc[key]) {
+        acc[key] = { timestamp: key, count: 0, errors: 0 };
+      }
+      acc[key].count++;
+      if (req.statusCode >= 400) {
+        acc[key].errors++;
+      }
+      return acc;
+    }, {} as Record<string, { timestamp: string; count: number; errors: number }>);
+
+    const timeline = Object.values(requestsByMinute).sort((a, b) =>
+      a.timestamp.localeCompare(b.timestamp)
+    );
+
+    return {
+      summary: {
+        requestsPerSecond: Math.round(requestsPerSecond * 100) / 100,
+        errorsPerSecond: Math.round(errorsPerSecond * 100) / 100,
+        avgResponseTime: Math.round(avgResponseTime),
+        totalRequests: recentRequests.length,
+        totalErrors: recentErrors,
+        activeTokens: activeRequests.length,
+      },
+      timeline,
+      activeTokens: activeRequests,
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Get performance metrics (P95, P99, latency distribution)
+   */
+  async getPerformanceMetrics(userId: string, days: number = 7) {
+    const tokens = await this.prisma.apiToken.findMany({
+      where: { createdBy: userId },
+      select: { id: true },
+    });
+
+    const tokenIds = tokens.map((t) => t.id);
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    // Get all response times for the period
+    const requests = await this.prisma.apiRequest.findMany({
+      where: {
+        tokenId: { in: tokenIds },
+        createdAt: { gte: startDate },
+      },
+      select: {
+        responseTime: true,
+        endpoint: true,
+        statusCode: true,
+      },
+    });
+
+    if (requests.length === 0) {
+      return {
+        p50: 0,
+        p95: 0,
+        p99: 0,
+        min: 0,
+        max: 0,
+        avg: 0,
+        distribution: [],
+        slowestEndpoints: [],
+      };
+    }
+
+    // Calculate percentiles
+    const sortedTimes = requests.map(r => r.responseTime).sort((a, b) => a - b);
+
+    const p50Index = Math.floor(sortedTimes.length * 0.50);
+    const p95Index = Math.floor(sortedTimes.length * 0.95);
+    const p99Index = Math.floor(sortedTimes.length * 0.99);
+
+    const p50 = sortedTimes[p50Index];
+    const p95 = sortedTimes[p95Index];
+    const p99 = sortedTimes[p99Index];
+    const min = sortedTimes[0];
+    const max = sortedTimes[sortedTimes.length - 1];
+    const avg = sortedTimes.reduce((a, b) => a + b, 0) / sortedTimes.length;
+
+    // Create latency distribution buckets
+    const buckets = [0, 50, 100, 200, 500, 1000, 2000, 5000];
+    const distribution = buckets.map((bucket, i) => {
+      const nextBucket = buckets[i + 1] || Infinity;
+      const count = sortedTimes.filter(t => t >= bucket && t < nextBucket).length;
+      return {
+        range: nextBucket === Infinity ? `${bucket}+ms` : `${bucket}-${nextBucket}ms`,
+        count,
+        percentage: Math.round((count / sortedTimes.length) * 100),
+      };
+    });
+
+    // Find slowest endpoints
+    const endpointStats = requests.reduce((acc, req) => {
+      if (!acc[req.endpoint]) {
+        acc[req.endpoint] = { times: [], count: 0 };
+      }
+      acc[req.endpoint].times.push(req.responseTime);
+      acc[req.endpoint].count++;
+      return acc;
+    }, {} as Record<string, { times: number[]; count: number }>);
+
+    const slowestEndpoints = Object.entries(endpointStats)
+      .map(([endpoint, data]) => ({
+        endpoint,
+        avgResponseTime: Math.round(data.times.reduce((a, b) => a + b, 0) / data.times.length),
+        requestCount: data.count,
+      }))
+      .sort((a, b) => b.avgResponseTime - a.avgResponseTime)
+      .slice(0, 10);
+
+    return {
+      p50: Math.round(p50),
+      p95: Math.round(p95),
+      p99: Math.round(p99),
+      min: Math.round(min),
+      max: Math.round(max),
+      avg: Math.round(avg),
+      distribution,
+      slowestEndpoints,
+    };
+  }
+
+  /**
+   * Detect anomalies in API usage
+   */
+  async getAnomalies(userId: string, days: number = 7) {
+    const tokens = await this.prisma.apiToken.findMany({
+      where: { createdBy: userId },
+      select: { id: true, projectName: true },
+    });
+
+    const tokenIds = tokens.map((t) => t.id);
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const anomalies = [];
+
+    // Check for error spikes
+    const errorSpikes = await this.prisma.apiRequest.groupBy({
+      by: ['tokenId', 'endpoint'],
+      where: {
+        tokenId: { in: tokenIds },
+        createdAt: { gte: startDate },
+        statusCode: { gte: 400 },
+      },
+      _count: true,
+      having: {
+        tokenId: {
+          _count: { gt: 10 }, // More than 10 errors
+        },
+      },
+    });
+
+    for (const spike of errorSpikes) {
+      const token = tokens.find(t => t.id === spike.tokenId);
+      anomalies.push({
+        type: 'ERROR_SPIKE',
+        severity: spike._count > 50 ? 'HIGH' : 'MEDIUM',
+        tokenId: spike.tokenId,
+        tokenName: token?.projectName,
+        endpoint: spike.endpoint,
+        count: spike._count,
+        message: `High error rate detected: ${spike._count} errors on ${spike.endpoint}`,
+        detectedAt: new Date().toISOString(),
+      });
+    }
+
+    // Check for unusual response times
+    const slowRequests = await this.prisma.apiRequest.findMany({
+      where: {
+        tokenId: { in: tokenIds },
+        createdAt: { gte: startDate },
+        responseTime: { gt: 5000 }, // > 5 seconds
+      },
+      select: {
+        tokenId: true,
+        endpoint: true,
+        responseTime: true,
+        createdAt: true,
+      },
+      take: 20,
+      orderBy: { responseTime: 'desc' },
+    });
+
+    if (slowRequests.length > 0) {
+      const groupedByToken = slowRequests.reduce((acc, req) => {
+        if (!acc[req.tokenId]) {
+          acc[req.tokenId] = [];
+        }
+        acc[req.tokenId].push(req);
+        return acc;
+      }, {} as Record<string, typeof slowRequests>);
+
+      for (const [tokenId, requests] of Object.entries(groupedByToken)) {
+        const token = tokens.find(t => t.id === tokenId);
+        anomalies.push({
+          type: 'SLOW_RESPONSE',
+          severity: 'MEDIUM',
+          tokenId,
+          tokenName: token?.projectName,
+          endpoint: requests[0].endpoint,
+          count: requests.length,
+          message: `Slow responses detected: ${requests.length} requests > 5s`,
+          detectedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    // Check for rate limit abuse
+    const rateLimitAbuse = await this.prisma.rateLimitEvent.groupBy({
+      by: ['tokenId'],
+      where: {
+        tokenId: { in: tokenIds },
+        blockedAt: { gte: startDate },
+      },
+      _count: true,
+      having: {
+        tokenId: {
+          _count: { gt: 5 },
+        },
+      },
+    });
+
+    for (const abuse of rateLimitAbuse) {
+      const token = tokens.find(t => t.id === abuse.tokenId);
+      anomalies.push({
+        type: 'RATE_LIMIT_ABUSE',
+        severity: abuse._count > 20 ? 'HIGH' : 'MEDIUM',
+        tokenId: abuse.tokenId,
+        tokenName: token?.projectName,
+        count: abuse._count,
+        message: `Excessive rate limit hits: ${abuse._count} violations`,
+        detectedAt: new Date().toISOString(),
+      });
+    }
+
+    return anomalies.sort((a, b) => {
+      if (a.severity === 'HIGH' && b.severity !== 'HIGH') return -1;
+      if (a.severity !== 'HIGH' && b.severity === 'HIGH') return 1;
+      return 0;
+    });
+  }
+
+  /**
+   * Get trend comparison (current period vs previous period)
+   */
+  async getTrends(userId: string, days: number = 7) {
+    const tokens = await this.prisma.apiToken.findMany({
+      where: { createdBy: userId },
+      select: { id: true },
+    });
+
+    const tokenIds = tokens.map((t) => t.id);
+
+    // Current period
+    const currentStart = new Date();
+    currentStart.setDate(currentStart.getDate() - days);
+
+    // Previous period (same length)
+    const previousStart = new Date(currentStart);
+    previousStart.setDate(previousStart.getDate() - days);
+
+    const [currentRequests, previousRequests] = await Promise.all([
+      this.prisma.apiRequest.findMany({
+        where: {
+          tokenId: { in: tokenIds },
+          createdAt: { gte: currentStart },
+        },
+        select: {
+          statusCode: true,
+          responseTime: true,
+        },
+      }),
+
+      this.prisma.apiRequest.findMany({
+        where: {
+          tokenId: { in: tokenIds },
+          createdAt: {
+            gte: previousStart,
+            lt: currentStart,
+          },
+        },
+        select: {
+          statusCode: true,
+          responseTime: true,
+        },
+      }),
+    ]);
+
+    const calculateMetrics = (requests: typeof currentRequests) => {
+      const total = requests.length;
+      const errors = requests.filter(r => r.statusCode >= 400).length;
+      const errorRate = total > 0 ? (errors / total) * 100 : 0;
+      const avgResponseTime = total > 0
+        ? requests.reduce((sum, r) => sum + r.responseTime, 0) / total
+        : 0;
+
+      return { total, errors, errorRate, avgResponseTime };
+    };
+
+    const current = calculateMetrics(currentRequests);
+    const previous = calculateMetrics(previousRequests);
+
+    const calculateChange = (curr: number, prev: number) => {
+      if (prev === 0) return curr > 0 ? 100 : 0;
+      return Math.round(((curr - prev) / prev) * 100);
+    };
+
+    return {
+      period: `Last ${days} days`,
+      current: {
+        totalRequests: current.total,
+        errorRate: Math.round(current.errorRate * 100) / 100,
+        avgResponseTime: Math.round(current.avgResponseTime),
+      },
+      previous: {
+        totalRequests: previous.total,
+        errorRate: Math.round(previous.errorRate * 100) / 100,
+        avgResponseTime: Math.round(previous.avgResponseTime),
+      },
+      changes: {
+        totalRequests: calculateChange(current.total, previous.total),
+        errorRate: calculateChange(current.errorRate, previous.errorRate),
+        avgResponseTime: calculateChange(current.avgResponseTime, previous.avgResponseTime),
+      },
+    };
+  }
 }

@@ -13,6 +13,8 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagg
 import { TokensService } from './tokens.service';
 import { CreateTokenDto } from './dto/create-token.dto';
 import { UpdateTokenDto } from './dto/update-token.dto';
+import { CreateIpRuleDto } from './dto/create-ip-rule.dto';
+import { RegenerateTokenDto } from './dto/regenerate-token.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('tokens')
@@ -72,5 +74,61 @@ export class TokensController {
     const ipAddress = req.ip || req.connection?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'];
     return this.tokensService.remove(id, req.user.id, ipAddress, userAgent);
+  }
+
+  @Post(':id/regenerate')
+  @ApiOperation({ summary: 'Regenerate API token (create new token value, keep settings)' })
+  @ApiResponse({ status: 200, description: 'Token regenerated successfully. New token value returned.' })
+  regenerate(
+    @Param('id') id: string,
+    @Body() regenerateDto: RegenerateTokenDto,
+    @Request() req,
+  ) {
+    const ipAddress = req.ip || req.connection?.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'];
+    return this.tokensService.regenerate(id, regenerateDto, req.user.id, ipAddress, userAgent);
+  }
+
+  @Get(':id/rotation-history')
+  @ApiOperation({ summary: 'Get token rotation history' })
+  @ApiResponse({ status: 200, description: 'List of token regeneration events' })
+  getRotationHistory(@Param('id') id: string, @Request() req) {
+    return this.tokensService.getRotationHistory(id, req.user.id);
+  }
+
+  @Post(':id/ip-rules')
+  @ApiOperation({ summary: 'Create IP rule for token (whitelist/blacklist)' })
+  @ApiResponse({ status: 201, description: 'IP rule created successfully' })
+  createIpRule(
+    @Param('id') id: string,
+    @Body() createIpRuleDto: CreateIpRuleDto,
+    @Request() req,
+  ) {
+    return this.tokensService.createIpRule(id, createIpRuleDto, req.user.id);
+  }
+
+  @Get(':id/ip-rules')
+  @ApiOperation({ summary: 'Get all IP rules for a token' })
+  @ApiResponse({ status: 200, description: 'List of IP rules' })
+  getIpRules(@Param('id') id: string, @Request() req) {
+    return this.tokensService.getIpRules(id, req.user.id);
+  }
+
+  @Delete(':id/ip-rules/:ruleId')
+  @ApiOperation({ summary: 'Delete IP rule' })
+  @ApiResponse({ status: 200, description: 'IP rule deleted successfully' })
+  deleteIpRule(
+    @Param('id') id: string,
+    @Param('ruleId') ruleId: string,
+    @Request() req,
+  ) {
+    return this.tokensService.deleteIpRule(id, ruleId, req.user.id);
+  }
+
+  @Get(':id/security-log')
+  @ApiOperation({ summary: 'Get security events for a token (blocked IPs, failed attempts)' })
+  @ApiResponse({ status: 200, description: 'List of security events' })
+  getSecurityLog(@Param('id') id: string, @Request() req) {
+    return this.tokensService.getSecurityLog(id, req.user.id);
   }
 }

@@ -101,4 +101,35 @@ export class AnalyticsController {
       action,
     );
   }
+
+  @Get('realtime')
+  @ApiOperation({ summary: 'Get real-time metrics (last 5 minutes)' })
+  @ApiResponse({ status: 200, description: 'Real-time metrics retrieved' })
+  getRealtimeMetrics(@Request() req) {
+    return this.analyticsService.getRealtimeMetrics(req.user.id);
+  }
+
+  @Get('performance')
+  @ApiOperation({ summary: 'Get performance metrics (P50, P95, P99, latency distribution)' })
+  @ApiResponse({ status: 200, description: 'Performance metrics retrieved' })
+  getPerformanceMetrics(@Request() req, @Query('days') days?: string) {
+    const daysNum = days ? parseInt(days, 10) : 7;
+    return this.analyticsService.getPerformanceMetrics(req.user.id, daysNum);
+  }
+
+  @Get('anomalies')
+  @ApiOperation({ summary: 'Get detected anomalies (error spikes, slow responses, rate limit abuse)' })
+  @ApiResponse({ status: 200, description: 'Anomalies retrieved' })
+  getAnomalies(@Request() req, @Query('days') days?: string) {
+    const daysNum = days ? parseInt(days, 10) : 7;
+    return this.analyticsService.getAnomalies(req.user.id, daysNum);
+  }
+
+  @Get('trends')
+  @ApiOperation({ summary: 'Get trend comparison (current vs previous period)' })
+  @ApiResponse({ status: 200, description: 'Trends retrieved' })
+  getTrends(@Request() req, @Query('days') days?: string) {
+    const daysNum = days ? parseInt(days, 10) : 7;
+    return this.analyticsService.getTrends(req.user.id, daysNum);
+  }
 }
