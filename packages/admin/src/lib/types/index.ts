@@ -155,3 +155,37 @@ export interface PaginatedResponse<T> {
   page: number;
   limit: number;
 }
+
+// Endpoint Rule types
+export enum HttpMethod {
+  GET = 'GET',
+  POST = 'POST',
+  PUT = 'PUT',
+  PATCH = 'PATCH',
+  DELETE = 'DELETE',
+  OPTIONS = 'OPTIONS',
+  HEAD = 'HEAD',
+}
+
+export interface EndpointRule {
+  id: string;
+  tokenId: string;
+  endpoint: string;
+  method?: HttpMethod | null;
+  description?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  creator?: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+  };
+}
+
+export interface CreateEndpointRuleRequest {
+  endpoint: string;
+  method?: HttpMethod;
+  description?: string;
+}

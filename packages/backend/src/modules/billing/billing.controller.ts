@@ -17,6 +17,7 @@ import {
 import { ApiTokenGuard } from '../auth/guards/api-token.guard';
 import { ScopeGuard } from '../../common/guards/scope.guard';
 import { RateLimitGuard } from '../../common/guards/rate-limit.guard';
+import { EndpointAccessGuard } from '../../common/guards/endpoint-access.guard';
 import { RequireScopes } from '../../common/decorators/require-scopes.decorator';
 import { ApiScope } from '../../common/constants/scopes.constants';
 import { BillingService } from './billing.service';
@@ -55,7 +56,7 @@ import { ChangeTariffDto, ChangeTariffResponseDto } from './dto/change-tariff.dt
 @ApiTags('billing')
 @ApiBearerAuth('API-token')
 @Controller('billing')
-@UseGuards(ApiTokenGuard, RateLimitGuard, ScopeGuard)
+@UseGuards(ApiTokenGuard, RateLimitGuard, ScopeGuard, EndpointAccessGuard)
 @RequireScopes(ApiScope.BILLING)
 export class BillingController {
   constructor(

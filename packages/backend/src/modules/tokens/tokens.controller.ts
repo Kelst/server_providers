@@ -15,6 +15,7 @@ import { CreateTokenDto } from './dto/create-token.dto';
 import { UpdateTokenDto } from './dto/update-token.dto';
 import { CreateIpRuleDto } from './dto/create-ip-rule.dto';
 import { RegenerateTokenDto } from './dto/regenerate-token.dto';
+import { CreateEndpointRuleDto } from './dto/create-endpoint-rule.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('tokens')
@@ -130,5 +131,34 @@ export class TokensController {
   @ApiResponse({ status: 200, description: 'List of security events' })
   getSecurityLog(@Param('id') id: string, @Request() req) {
     return this.tokensService.getSecurityLog(id, req.user.id);
+  }
+
+  @Post(':id/endpoint-rules')
+  @ApiOperation({ summary: 'Create endpoint rule for token (blacklist endpoint)' })
+  @ApiResponse({ status: 201, description: 'Endpoint rule created successfully' })
+  createEndpointRule(
+    @Param('id') id: string,
+    @Body() createEndpointRuleDto: CreateEndpointRuleDto,
+    @Request() req,
+  ) {
+    return this.tokensService.createEndpointRule(id, createEndpointRuleDto, req.user.id);
+  }
+
+  @Get(':id/endpoint-rules')
+  @ApiOperation({ summary: 'Get all endpoint rules for a token' })
+  @ApiResponse({ status: 200, description: 'List of endpoint rules' })
+  getEndpointRules(@Param('id') id: string, @Request() req) {
+    return this.tokensService.getEndpointRules(id, req.user.id);
+  }
+
+  @Delete(':id/endpoint-rules/:ruleId')
+  @ApiOperation({ summary: 'Delete endpoint rule' })
+  @ApiResponse({ status: 200, description: 'Endpoint rule deleted successfully' })
+  deleteEndpointRule(
+    @Param('id') id: string,
+    @Param('ruleId') ruleId: string,
+    @Request() req,
+  ) {
+    return this.tokensService.deleteEndpointRule(id, ruleId, req.user.id);
   }
 }

@@ -20,8 +20,9 @@ import {
 } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { tokensApi } from '@/lib/api/tokensApi';
+import { EndpointRule, HttpMethod } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Plus, Trash2, RefreshCw, Shield, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, RefreshCw, Shield, AlertTriangle, CheckCircle2, Ban } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface SecurityTabProps {
@@ -33,6 +34,7 @@ export function SecurityTab({ tokenId }: SecurityTabProps) {
   const [ipRules, setIpRules] = useState<any[]>([]);
   const [rotationHistory, setRotationHistory] = useState<any[]>([]);
   const [securityLog, setSecurityLog] = useState<any[]>([]);
+  const [endpointRules, setEndpointRules] = useState<EndpointRule[]>([]);
   const [loading, setLoading] = useState(false);
 
   // IP Rule Dialog State
@@ -40,6 +42,12 @@ export function SecurityTab({ tokenId }: SecurityTabProps) {
   const [newRuleType, setNewRuleType] = useState<'WHITELIST' | 'BLACKLIST'>('WHITELIST');
   const [newRuleIP, setNewRuleIP] = useState('');
   const [newRuleDescription, setNewRuleDescription] = useState('');
+
+  // Endpoint Rule Dialog State
+  const [showAddEndpointRule, setShowAddEndpointRule] = useState(false);
+  const [newEndpoint, setNewEndpoint] = useState('');
+  const [newMethod, setNewMethod] = useState<HttpMethod | 'ALL'>('ALL');
+  const [newEndpointDescription, setNewEndpointDescription] = useState('');
 
   // Token Regeneration Dialog State
   const [showRegenerate, setShowRegenerate] = useState(false);
@@ -53,14 +61,16 @@ export function SecurityTab({ tokenId }: SecurityTabProps) {
   const loadSecurityData = async () => {
     setLoading(true);
     try {
-      const [rules, history, log] = await Promise.all([
+      const [rules, history, log, epRules] = await Promise.all([
         tokensApi.getIpRules(tokenId),
         tokensApi.getRotationHistory(tokenId),
         tokensApi.getSecurityLog(tokenId),
+        tokensApi.getEndpointRules(tokenId),
       ]);
       setIpRules(rules);
       setRotationHistory(history);
       setSecurityLog(log);
+      setEndpointRules(epRules);
     } catch (error) {
       console.error('Failed to load security data:', error);
     } finally {
@@ -150,6 +160,59 @@ export function SecurityTab({ tokenId }: SecurityTabProps) {
         variant: 'destructive',
         title: 'Error',
         description: 'Failed to copy token',
+      });
+    }
+  };
+
+  const handleAddEndpointRule = async () => {
+    if (!newEndpoint) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please enter an endpoint path',
+      });
+      return;
+    }
+
+    try {
+      await tokensApi.createEndpointRule(tokenId, {
+        endpoint: newEndpoint,
+        method: newMethod === 'ALL' ? undefined : (newMethod as HttpMethod),
+        description: newEndpointDescription || undefined,
+      });
+
+      toast({
+        title: 'Endpoint Rule Added',
+        description: `Blocked ${newEndpoint} ${newMethod !== 'ALL' ? `(${newMethod})` : '(all methods)'}`,
+      });
+
+      setShowAddEndpointRule(false);
+      setNewEndpoint('');
+      setNewMethod('ALL');
+      setNewEndpointDescription('');
+      loadSecurityData();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to add endpoint rule',
+      });
+    }
+  };
+
+  const handleDeleteEndpointRule = async (ruleId: string) => {
+    try {
+      await tokensApi.deleteEndpointRule(tokenId, ruleId);
+      toast({
+        title: 'Endpoint Rule Deleted',
+        description: 'The endpoint rule has been removed',
+      });
+      loadSecurityData();
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to delete endpoint rule',
       });
     }
   };
@@ -367,6 +430,126 @@ export function SecurityTab({ tokenId }: SecurityTabProps) {
             </Table>
           ) : (
             <p className="text-sm text-muted-foreground">No IP rules configured</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Endpoint Rules Section (Blacklist) */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Ban className="h-5 w-5" />
+                Blocked Endpoints
+              </CardTitle>
+              <CardDescription>Block access to specific endpoints for this token</CardDescription>
+            </div>
+            <Dialog open={showAddEndpointRule} onOpenChange={setShowAddEndpointRule}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Rule
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Block Endpoint</DialogTitle>
+                  <DialogDescription>
+                    Block this token from accessing a specific endpoint
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Endpoint Path</Label>
+                    <Input
+                      value={newEndpoint}
+                      onChange={(e) => setNewEndpoint(e.target.value)}
+                      placeholder="/api/billing/users/*"
+                    />
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">
+                        Enter endpoint path. Wildcards supported:
+                      </p>
+                      <ul className="text-xs text-muted-foreground list-disc list-inside">
+                        <li><code className="bg-muted px-1 rounded">*</code> - matches any segment (e.g., /api/billing/users/*)</li>
+                        <li><code className="bg-muted px-1 rounded">**</code> - matches any path (e.g., /api/billing/**)</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>HTTP Method</Label>
+                    <Select value={newMethod} onValueChange={(value: any) => setNewMethod(value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL">All Methods</SelectItem>
+                        <SelectItem value="GET">GET</SelectItem>
+                        <SelectItem value="POST">POST</SelectItem>
+                        <SelectItem value="PUT">PUT</SelectItem>
+                        <SelectItem value="PATCH">PATCH</SelectItem>
+                        <SelectItem value="DELETE">DELETE</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Description (Optional)</Label>
+                    <Input
+                      value={newEndpointDescription}
+                      onChange={(e) => setNewEndpointDescription(e.target.value)}
+                      placeholder="e.g., Restricted access for user 140278"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowAddEndpointRule(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleAddEndpointRule}>Add Rule</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {endpointRules.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Endpoint</TableHead>
+                  <TableHead>Method</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {endpointRules.map((rule) => (
+                  <TableRow key={rule.id}>
+                    <TableCell className="font-mono text-sm">{rule.endpoint}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {rule.method || 'ALL'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{rule.description || '-'}</TableCell>
+                    <TableCell>{format(new Date(rule.createdAt), 'PP')}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteEndpointRule(rule.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">No blocked endpoints</p>
           )}
         </CardContent>
       </Card>

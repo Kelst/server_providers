@@ -25,6 +25,7 @@ model User {
   auditLogs           TokenAuditLog[]
   ipRules             IpRule[]
   tokenRotations      TokenRotationHistory[]
+  endpointRules       EndpointRule[]
 
   @@map("users")
 }
@@ -58,6 +59,7 @@ model ApiToken {
   ipRules           IpRule[]
   securityEvents    SecurityEvent[]
   rotationHistory   TokenRotationHistory[]
+  endpointRules     EndpointRule[]
 
   @@index([tokenHash])
   @@index([isActive])
@@ -365,5 +367,25 @@ model TokenRotationHistory {
   @@index([tokenId])
   @@index([rotatedAt])
   @@map("token_rotation_history")
+}
+
+// Endpoint Access Rules (блокування доступу до конкретних endpoints)
+model EndpointRule {
+  id          String   @id @default(uuid())
+  tokenId     String   @map("token_id")
+  endpoint    String   @db.VarChar(500) // Точний шлях, наприклад "/api/billing/users/140278/payments"
+  method      String?  @db.VarChar(10)  // HTTP метод (GET, POST, etc.) або null для всіх методів
+  description String?  @db.Text
+  createdBy   String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  token       ApiToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  creator     User     @relation(fields: [createdBy], references: [id])
+
+  @@unique([tokenId, endpoint, method])
+  @@index([tokenId])
+  @@index([endpoint])
+  @@map("endpoint_rules")
 }
 

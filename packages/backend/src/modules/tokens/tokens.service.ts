@@ -4,6 +4,7 @@ import { CreateTokenDto } from './dto/create-token.dto';
 import { UpdateTokenDto } from './dto/update-token.dto';
 import { CreateIpRuleDto } from './dto/create-ip-rule.dto';
 import { RegenerateTokenDto } from './dto/regenerate-token.dto';
+import { CreateEndpointRuleDto } from './dto/create-endpoint-rule.dto';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 
@@ -529,6 +530,120 @@ export class TokensService {
       where: { tokenId },
       orderBy: { createdAt: 'desc' },
       take: limit,
+    });
+  }
+
+  /**
+   * Create endpoint rule for token (blacklist)
+   */
+  async createEndpointRule(tokenId: string, createEndpointRuleDto: CreateEndpointRuleDto, userId: string) {
+    // Verify token belongs to user
+    const token = await this.prisma.apiToken.findFirst({
+      where: {
+        id: tokenId,
+        createdBy: userId,
+      },
+    });
+
+    if (!token) {
+      throw new NotFoundException('Token not found');
+    }
+
+    // Check for duplicate endpoint rule
+    const existing = await this.prisma.endpointRule.findFirst({
+      where: {
+        tokenId,
+        endpoint: createEndpointRuleDto.endpoint,
+        method: createEndpointRuleDto.method || null,
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException('Endpoint rule already exists for this token');
+    }
+
+    return this.prisma.endpointRule.create({
+      data: {
+        tokenId,
+        endpoint: createEndpointRuleDto.endpoint,
+        method: createEndpointRuleDto.method || null,
+        description: createEndpointRuleDto.description,
+        createdBy: userId,
+      },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Get all endpoint rules for a token
+   */
+  async getEndpointRules(tokenId: string, userId: string) {
+    const token = await this.prisma.apiToken.findFirst({
+      where: {
+        id: tokenId,
+        createdBy: userId,
+      },
+    });
+
+    if (!token) {
+      throw new NotFoundException('Token not found');
+    }
+
+    return this.prisma.endpointRule.findMany({
+      where: { tokenId },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Delete endpoint rule
+   */
+  async deleteEndpointRule(tokenId: string, ruleId: string, userId: string) {
+    // Verify token belongs to user
+    const token = await this.prisma.apiToken.findFirst({
+      where: {
+        id: tokenId,
+        createdBy: userId,
+      },
+    });
+
+    if (!token) {
+      throw new NotFoundException('Token not found');
+    }
+
+    // Verify rule belongs to this token
+    const rule = await this.prisma.endpointRule.findFirst({
+      where: {
+        id: ruleId,
+        tokenId,
+      },
+    });
+
+    if (!rule) {
+      throw new NotFoundException('Endpoint rule not found');
+    }
+
+    return this.prisma.endpointRule.delete({
+      where: { id: ruleId },
     });
   }
 }

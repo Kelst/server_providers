@@ -59,4 +59,18 @@ export const tokensApi = {
     const { data } = await apiClient.get(`/tokens/${id}/security-log`);
     return data;
   },
+
+  async createEndpointRule(id: string, ruleData: { endpoint: string; method?: string; description?: string }): Promise<any> {
+    const { data } = await apiClient.post(`/tokens/${id}/endpoint-rules`, ruleData);
+    return data;
+  },
+
+  async getEndpointRules(id: string): Promise<any[]> {
+    const { data } = await apiClient.get(`/tokens/${id}/endpoint-rules`);
+    return data;
+  },
+
+  async deleteEndpointRule(id: string, ruleId: string): Promise<void> {
+    await apiClient.delete(`/tokens/${id}/endpoint-rules/${ruleId}`);
+  },
 };
