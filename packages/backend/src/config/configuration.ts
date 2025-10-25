@@ -50,4 +50,11 @@ export default () => ({
       },
     },
   },
+  payments: {
+    privat24: {
+      staticTokenIntelekt: process.env.STATICTOKEN_PRIVAT24,
+      staticTokenVeles: process.env.STATICTOKEN_PRIVAT24_VELES,
+      staticTokenOpensvit: process.env.STATICTOKEN_PRIVAT24_OPENSVIT,
+    },
+  },
 });

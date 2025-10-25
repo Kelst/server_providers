@@ -15,8 +15,20 @@ import {
   PhoneLoginVerifyResponseDto,
 } from './dto/phone-login.dto';
 import { ChangeTariffResponseDto } from './dto/change-tariff.dto';
+import { PaymentLinkResponseDto } from './dto/payment-link.dto';
+import { AvailablePaymentMethodsResponseDto, PaymentMethodDto } from './dto/available-payment-methods.dto';
 import { generateVerificationCode } from './helpers/verification-code.helper';
 import { normalizePhoneNumber, isValidUkrainianPhone } from './helpers/phone-normalize.helper';
+import {
+  PaymentMethod,
+  PaymentProvider,
+  PAYMENT_METHOD_SUPPORT_MATRIX,
+  PAYMENT_METHOD_NAMES,
+  PRIVAT24_BASE_URL,
+  EASYPAY_URLS,
+  PORTMONE_CONFIG,
+  PORTMONE_PAYEE_ID_MAP,
+} from './constants/payment.constants';
 
 interface AbillsUser {
   id: string;
@@ -1175,6 +1187,322 @@ export class BillingService {
       };
     } catch (error) {
       this.logger.error(`Error changing tariff for uid ${uid}:`, error);
+      throw error;
+    }
+  }
+
+  // ==================== Payment Link Generation Methods ====================
+
+  /**
+   * Get login by uid
+   */
+  private async getLoginByUid(uid: number): Promise<string> {
+    try {
+      const sql = `SELECT id FROM users WHERE uid = ?`;
+      const results = await this.mysqlService.query<any[]>(sql, [uid]);
+
+      if (!results || results.length === 0) {
+        throw new BadRequestException('Користувача не знайдено');
+      }
+
+      return results[0].id;
+    } catch (error) {
+      this.logger.error(`Error getting login for uid ${uid}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get provider by uid
+   */
+  private async getProviderByUid(uid: number): Promise<string> {
+    try {
+      const sql = `
+        SELECT c.company
+        FROM users u
+        LEFT JOIN config_gid c ON u.gid = c.gid
+        WHERE u.uid = ?
+      `;
+      const results = await this.mysqlService.query<any[]>(sql, [uid]);
+
+      if (!results || results.length === 0) {
+        throw new BadRequestException('Користувача не знайдено');
+      }
+
+      const company = results[0].company || '';
+
+      // Map company to provider using CompanyService
+      return this.companyService.getProviderByCompany(company);
+    } catch (error) {
+      this.logger.error(`Error getting provider for uid ${uid}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if payment method is supported for provider
+   */
+  private isPaymentMethodSupported(method: PaymentMethod, provider: string): boolean {
+    const supportedProviders = PAYMENT_METHOD_SUPPORT_MATRIX[method];
+    return supportedProviders.some(p => p === provider);
+  }
+
+  /**
+   * Get available payment methods for user
+   */
+  async getAvailablePaymentMethods(uid: number): Promise<AvailablePaymentMethodsResponseDto> {
+    try {
+      const provider = await this.getProviderByUid(uid);
+
+      const methods: PaymentMethodDto[] = Object.values(PaymentMethod).map(method => ({
+        method,
+        name: PAYMENT_METHOD_NAMES[method],
+        available: this.isPaymentMethodSupported(method, provider),
+      }));
+
+      return {
+        provider,
+        methods,
+      };
+    } catch (error) {
+      this.logger.error(`Error getting available payment methods for uid ${uid}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate Privat24 payment link
+   */
+  async generatePrivat24Link(uid: number, amount: number): Promise<PaymentLinkResponseDto> {
+    try {
+      this.logger.log(`Generating Privat24 link for uid ${uid}, amount: ${amount}`);
+
+      const [login, provider] = await Promise.all([
+        this.getLoginByUid(uid),
+        this.getProviderByUid(uid),
+      ]);
+
+      // Check if provider supports Privat24
+      if (!this.isPaymentMethodSupported(PaymentMethod.PRIVAT24, provider)) {
+        return {
+          success: false,
+          message: `Оплата через Приват24 недоступна для вашого провайдера (${provider})`,
+        };
+      }
+
+      // Get static token based on provider (using process.env directly)
+      let staticToken: string;
+      let result = '';
+
+      switch (provider) {
+        case PaymentProvider.INTELEKT:
+          staticToken = process.env.STATICTOKEN_PRIVAT24;
+          break;
+        case PaymentProvider.VELES:
+          staticToken = process.env.STATICTOKEN_PRIVAT24_VELES;
+          break;
+        case PaymentProvider.OPENSVIT:
+          staticToken = process.env.STATICTOKEN_PRIVAT24_OPENSVIT;
+          break;
+        case PaymentProvider.OPTICOM:
+          // Opticom does not support Privat24
+          return {
+            success: false,
+            message: `Оплата через Приват24 недоступна для провайдера Opticom`,
+          };
+        default:
+          throw new BadRequestException(`Невідомий провайдер: ${provider}`);
+      }
+
+      if (!staticToken) {
+        this.logger.error(`Privat24 static token not configured for provider: ${provider}`);
+        throw new BadRequestException('Помилка конфігурації платіжної системи');
+      }
+
+      const formattedAmount = parseFloat(amount.toString()).toFixed(2);
+      result = `${PRIVAT24_BASE_URL}?staticToken=${staticToken}&acc=${login}&amount=${formattedAmount}`;
+
+      this.logger.log(`Privat24 link generated for uid ${uid}, provider: ${provider}`);
+
+      return {
+        success: true,
+        message: 'Посилання на оплату успішно згенеровано',
+        link: result,
+      };
+    } catch (error) {
+      this.logger.error(`Error generating Privat24 link for uid ${uid}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate EasyPay payment link
+   */
+  async generateEasyPayLink(uid: number, amount: number): Promise<PaymentLinkResponseDto> {
+    try {
+      this.logger.log(`Generating EasyPay link for uid ${uid}, amount: ${amount}`);
+
+      const [login, provider] = await Promise.all([
+        this.getLoginByUid(uid),
+        this.getProviderByUid(uid),
+      ]);
+
+      // Check if provider supports EasyPay
+      if (!this.isPaymentMethodSupported(PaymentMethod.EASYPAY, provider)) {
+        return {
+          success: false,
+          message: `Оплата через EasyPay недоступна для вашого провайдера (${provider})`,
+        };
+      }
+
+      // Get base URL for provider
+      const baseUrl = EASYPAY_URLS[provider as PaymentProvider];
+      if (!baseUrl) {
+        throw new BadRequestException(`URL EasyPay не налаштовано для провайдера: ${provider}`);
+      }
+
+      // Create hash parameter
+      const param = `account=${login}&amount=${amount}&readonly=account`;
+      const encodedData = Buffer.from(param).toString('base64');
+
+      const link = `${baseUrl}?hash=${encodedData}`;
+
+      this.logger.log(`EasyPay link generated for uid ${uid}: ${link}`);
+
+      return {
+        success: true,
+        message: 'Посилання на оплату успішно згенеровано',
+        link,
+      };
+    } catch (error) {
+      this.logger.error(`Error generating EasyPay link for uid ${uid}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate Portmone payment link
+   */
+  async generatePortmoneLink(uid: number, amount: number): Promise<PaymentLinkResponseDto> {
+    try {
+      this.logger.log(`Generating Portmone link for uid ${uid}, amount: ${amount}`);
+
+      const [login, provider] = await Promise.all([
+        this.getLoginByUid(uid),
+        this.getProviderByUid(uid),
+      ]);
+
+      // Check if provider supports Portmone
+      if (!this.isPaymentMethodSupported(PaymentMethod.PORTMONE, provider)) {
+        return {
+          success: false,
+          message: `Оплата через Portmone недоступна для вашого провайдера (${provider})`,
+        };
+      }
+
+      // Get payeeId from database
+      const sqlGetPayeeId = `
+        SELECT p_m_p.value as payeeId
+        FROM users as u
+        INNER JOIN paysys_merchant_to_groups_settings as p_m_t_g_s ON (u.gid=p_m_t_g_s.gid)
+        INNER JOIN paysys_merchant_params as p_m_p ON (p_m_t_g_s.merch_id=p_m_p.merchant_id)
+        WHERE u.uid = ? AND p_m_t_g_s.paysys_id = '15' AND p_m_p.param = 'PAYSYS_PORTMONE_PAYEE_ID'
+      `;
+
+      const payeeIdResults = await this.mysqlService.query<any[]>(sqlGetPayeeId, [uid]);
+
+      if (!payeeIdResults || payeeIdResults.length === 0) {
+        throw new BadRequestException('PayeeId не знайдено в базі даних');
+      }
+
+      const dbPayeeId = payeeIdResults[0].payeeId;
+
+      // Map payeeId
+      const payeeId = PORTMONE_PAYEE_ID_MAP[dbPayeeId];
+      if (!payeeId) {
+        throw new BadRequestException(`PayeeId ${dbPayeeId} не знайдено в конфігурації`);
+      }
+
+      // Create Portmone API request
+      const requestData = {
+        method: 'createLinkPayment',
+        paymentTypes: {
+          masterpass: 'Y',
+          visacheckout: 'Y',
+          createtokenonly: 'N',
+          token: 'N',
+          privat: 'N',
+          gpay: 'Y',
+          card: 'Y',
+          applepay: 'Y',
+        },
+        priorityPaymentTypes: {
+          token: '7',
+          gpay: '2',
+          masterpass: '4',
+          applepay: '3',
+          visacheckout: '5',
+          privat: '6',
+          card: '1',
+        },
+        payee: {
+          payeeId: payeeId,
+          login: 'INTELEKT',
+          dt: '',
+          signature: '',
+          shopSiteId: '',
+        },
+        order: {
+          description: login,
+          shopOrderNumber: '',
+          billAmount: amount,
+          attribute1: '',
+          attribute2: '',
+          attribute3: '',
+          attribute4: '',
+          attribute5: '',
+          successUrl: '',
+          failureUrl: '',
+          preauthFlag: 'N',
+          billCurrency: 'UAH',
+          encoding: '',
+        },
+        token: {
+          tokenFlag: 'N',
+          returnToken: 'Y',
+          token: '',
+          cardMask: '',
+          otherPaymentMethods: '',
+        },
+        payer: {
+          lang: 'uk',
+          emailAddress: '',
+          showEmail: 'N',
+        },
+      };
+
+      // Make request to Portmone API
+      const axios = (await import('axios')).default;
+      const response = await axios.post(PORTMONE_CONFIG.PAYMENT_URL, requestData, {
+        headers: PORTMONE_CONFIG.DEFAULT_HEADERS,
+      });
+
+      if (!response.data.linkPayment) {
+        this.logger.error(`Portmone API failed: ${JSON.stringify(response.data)}`);
+        throw new BadRequestException('Помилка при генерації посилання Portmone');
+      }
+
+      const link = response.data.linkPayment;
+
+      this.logger.log(`Portmone link generated for uid ${uid}: ${link}`);
+
+      return {
+        success: true,
+        message: 'Посилання на оплату успішно згенеровано',
+        link,
+      };
+    } catch (error) {
+      this.logger.error(`Error generating Portmone link for uid ${uid}:`, error);
       throw error;
     }
   }

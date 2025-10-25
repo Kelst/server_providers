@@ -111,6 +111,8 @@ The backend uses **two authentication strategies**:
 - `analytics/`: Request analytics and statistics (requires JWT)
 - `shared-api/`: Public API endpoints (require API token with "shared" scope)
 - `billing/`: Billing endpoints including auth and operations (require API token with "billing" scope)
+- `security/`: Security features including IP rules, audit logs, and security events
+- `notifications/`: Notification system for SMS and Telegram messages
 - `database/`: Prisma service wrapper (global module)
 
 **Common utilities** (packages/backend/src/common/):
@@ -118,14 +120,43 @@ The backend uses **two authentication strategies**:
 - `decorators/require-scopes.decorator.ts`: Decorator for requiring specific scopes
 - `constants/scopes.constants.ts`: Available scope definitions
 
+**Global interceptors** (packages/backend/src/interceptors/):
+- `api-logging.interceptor.ts`: Automatically logs all API token authenticated requests to `ApiRequest` table
+  - Only logs requests authenticated with API tokens (not JWT admin requests)
+  - Tracks endpoint, method, status, response time, IP, user agent
+  - Sanitizes sensitive fields (passwords, tokens, keys) before logging
+  - Limits payload size to 10KB (truncates larger payloads)
+
 ### Database Schema
 
 Key models in `packages/backend/prisma/schema.prisma`:
-- `User`: Admin users with JWT authentication
-- `ApiToken`: API tokens with scopes for external clients (includes rate limiting)
-- `ApiRequest`: Log of all API requests (endpoint, method, status, response time)
+
+**Core models:**
+- `User`: Admin users with JWT authentication (roles: ADMIN, SUPER_ADMIN)
+- `ApiToken`: API tokens with scopes for external clients (includes rate limiting, expiration)
+
+**Request tracking:**
+- `ApiRequest`: Automatic log of all API token requests (via ApiLoggingInterceptor)
 - `RateLimit`: Rate limiting tracking per token
+- `RateLimitEvent`: Log of rate limit violations
 - `AnalyticsSummary`: Pre-aggregated analytics data
+
+**Security models:**
+- `IpRule`: IP whitelist/blacklist per token
+- `SecurityEvent`: Security incidents (blocked IPs, failed auth, suspicious activity)
+- `TokenAuditLog`: Audit trail for all token changes (created, updated, deleted, rotated)
+- `TokenRotationHistory`: History of token regenerations
+- `EndpointRule`: Block access to specific endpoints per token
+
+**Notification & auth models:**
+- `NotificationLog`: SMS and Telegram notification tracking
+- `PhoneChangeVerification`: OTP codes for phone number changes
+- `PhoneLoginVerification`: OTP codes for phone-based login
+- `LoginAttempt`: Brute force protection tracking
+
+**Billing models:**
+- `CreditHistory`: Monthly credit usage tracking
+- `TariffChangeHistory`: History of tariff plan changes
 
 ### Configuration
 
@@ -213,3 +244,28 @@ When running with Docker:
 - Global rate limiting via `@nestjs/throttler` (100 requests/minute)
 - Per-token rate limiting via `ApiToken.rateLimit` field
 - Redis used for distributed rate limit tracking
+- Rate limit violations are logged to `RateLimitEvent` table
+
+## Important Patterns
+
+### Automatic Request Logging
+All requests authenticated with API tokens are automatically logged via the `ApiLoggingInterceptor` (registered globally in app.module.ts). You don't need to manually log requests - the interceptor:
+- Captures request/response data automatically
+- Sanitizes sensitive fields before storage
+- Records response time, status codes, errors
+- Only logs API token requests (not JWT admin requests)
+
+### Scope-Based Access Control
+Use the scope system to control access to endpoints:
+1. Add `@UseGuards(ApiTokenGuard, ScopeGuard)` to controller/method
+2. Add `@RequireScopes(ApiScope.BILLING)` to specify required scopes
+3. The ScopeGuard checks if the token has ALL required scopes
+4. Multiple scopes can be required: `@RequireScopes(ApiScope.BILLING, ApiScope.ANALYTICS)`
+
+### Security Features
+The system includes extensive security features:
+- **IP Rules**: Whitelist/blacklist IPs per token (IpRule model)
+- **Endpoint Rules**: Block specific endpoints per token (EndpointRule model)
+- **Audit Logging**: All token changes are logged (TokenAuditLog model)
+- **Security Events**: Suspicious activity tracking (SecurityEvent model)
+- **Token Rotation**: Track token regenerations (TokenRotationHistory model)

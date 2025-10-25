@@ -52,6 +52,8 @@ import {
 } from './dto/phone-login.dto';
 import { AvailableTariffsResponseDto } from './dto/available-tariffs.dto';
 import { ChangeTariffDto, ChangeTariffResponseDto } from './dto/change-tariff.dto';
+import { GeneratePaymentLinkDto, PaymentLinkResponseDto } from './dto/payment-link.dto';
+import { AvailablePaymentMethodsResponseDto } from './dto/available-payment-methods.dto';
 
 @ApiTags('billing')
 @ApiBearerAuth('API-token')
@@ -425,5 +427,96 @@ export class BillingController {
     @Body() dto: ChangeTariffDto,
   ): Promise<ChangeTariffResponseDto> {
     return this.billingService.changeTariff(uid, dto.tpId);
+  }
+
+  // ==================== Payment Endpoints ====================
+
+  @Get('payment/methods/:uid')
+  @ApiOperation({
+    summary: 'Get available payment methods',
+    description:
+      'Returns list of available payment methods for user based on their provider. Each provider supports different payment systems.',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'List of available payment methods',
+    type: AvailablePaymentMethodsResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getAvailablePaymentMethods(
+    @Param('uid', ParseIntPipe) uid: number,
+  ): Promise<AvailablePaymentMethodsResponseDto> {
+    return this.billingService.getAvailablePaymentMethods(uid);
+  }
+
+  @Post('payment/privat24/:uid')
+  @ApiOperation({
+    summary: 'Generate Privat24 payment link',
+    description:
+      'Generates payment link for Privat24. Supported providers: Intelekt, Veles, Opensvit. Uses provider-specific static token.',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment link generated successfully',
+    type: PaymentLinkResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request (user not found, provider not supported, etc.)',
+  })
+  async generatePrivat24Link(
+    @Param('uid', ParseIntPipe) uid: number,
+    @Body() dto: GeneratePaymentLinkDto,
+  ): Promise<PaymentLinkResponseDto> {
+    return this.billingService.generatePrivat24Link(uid, dto.amount);
+  }
+
+  @Post('payment/easypay/:uid')
+  @ApiOperation({
+    summary: 'Generate EasyPay payment link',
+    description:
+      'Generates payment link for EasyPay. Supported providers: Intelekt, Veles, Opensvit, Opticom. Uses base64 encoding for parameters.',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment link generated successfully',
+    type: PaymentLinkResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request (user not found, provider not supported, etc.)',
+  })
+  async generateEasyPayLink(
+    @Param('uid', ParseIntPipe) uid: number,
+    @Body() dto: GeneratePaymentLinkDto,
+  ): Promise<PaymentLinkResponseDto> {
+    return this.billingService.generateEasyPayLink(uid, dto.amount);
+  }
+
+  @Post('payment/portmone/:uid')
+  @ApiOperation({
+    summary: 'Generate Portmone payment link',
+    description:
+      'Generates payment link for Portmone. Supported providers: Intelekt, Veles. Calls Portmone API to create payment link. Requires payeeId from database.',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment link generated successfully',
+    type: PaymentLinkResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Bad request (user not found, provider not supported, payeeId not found, etc.)',
+  })
+  async generatePortmoneLink(
+    @Param('uid', ParseIntPipe) uid: number,
+    @Body() dto: GeneratePaymentLinkDto,
+  ): Promise<PaymentLinkResponseDto> {
+    return this.billingService.generatePortmoneLink(uid, dto.amount);
   }
 }

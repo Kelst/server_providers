@@ -1,4 +1,4 @@
-import * as Joi from 'joi';
+import Joi from 'joi';
 
 export default Joi.object({
   NODE_ENV: Joi.string()
@@ -41,4 +41,10 @@ export default Joi.object({
   SMS_SENDER_VELES: Joi.string().default('VelesISP'),
   SMS_SENDER_OPENSVIT: Joi.string().default('Opensvit'),
   SMS_SENDER_INTELEKT: Joi.string().default('INTELEKT'),
+
+  // Payment Systems Configuration
+  // Privat24
+  STATICTOKEN_PRIVAT24: Joi.string().optional(),
+  STATICTOKEN_PRIVAT24_VELES: Joi.string().optional(),
+  STATICTOKEN_PRIVAT24_OPENSVIT: Joi.string().optional(),
 });
