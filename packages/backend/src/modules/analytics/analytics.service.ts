@@ -543,14 +543,34 @@ export class AnalyticsService {
   /**
    * Get real-time metrics (last 5 minutes with auto-refresh capability)
    */
-  async getRealtimeMetrics(userId: string) {
+  async getRealtimeMetrics(userId: string | null) {
+    // Build token filter based on userId
+    const tokenFilter = userId ? { createdBy: userId } : {};
+
     const tokens = await this.prisma.apiToken.findMany({
-      where: { createdBy: userId },
+      where: tokenFilter,
       select: { id: true, projectName: true, isActive: true },
     });
 
     const tokenIds = tokens.map((t) => t.id);
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+    // If no tokens found, return empty metrics
+    if (tokenIds.length === 0) {
+      return {
+        summary: {
+          requestsPerSecond: 0,
+          errorsPerSecond: 0,
+          avgResponseTime: 0,
+          totalRequests: 0,
+          totalErrors: 0,
+          activeTokens: 0,
+        },
+        timeline: [],
+        activeTokens: [],
+        lastUpdated: new Date().toISOString(),
+      };
+    }
 
     const [recentRequests, recentErrors, activeRequests] = await Promise.all([
       // Requests in last 5 minutes
@@ -579,7 +599,7 @@ export class AnalyticsService {
       // Current active tokens with recent activity
       this.prisma.apiToken.findMany({
         where: {
-          createdBy: userId,
+          ...(userId ? { createdBy: userId } : {}),
           isActive: true,
           requests: {
             some: {

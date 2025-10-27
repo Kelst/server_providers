@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { analyticsApi } from '../api/analyticsApi';
+import { connectSocket, disconnectSocket } from '../socket/socket';
 
 interface RealtimeMetrics {
   summary: {
@@ -30,9 +31,7 @@ interface RealtimeState {
   clearError: () => void;
 }
 
-let refreshInterval: NodeJS.Timeout | null = null;
-
-export const useRealtimeStore = create<RealtimeState>((set, get) => ({
+export const useRealtimeStore = create<RealtimeState>((set) => ({
   metrics: null,
   isLoading: false,
   error: null,
@@ -52,29 +51,41 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
   },
 
   startAutoRefresh: () => {
-    const { fetchMetrics } = get();
+    const socket = connectSocket();
 
-    // Clear existing interval if any
-    if (refreshInterval) {
-      clearInterval(refreshInterval);
-    }
+    // Listen to metrics events from WebSocket
+    socket.on('metrics', (data: RealtimeMetrics) => {
+      set({ metrics: data, isLoading: false, error: null });
+    });
 
-    // Fetch immediately
-    fetchMetrics();
+    // Listen to alerts
+    socket.on('alert', (alert: any) => {
+      console.log('[Alert]', alert);
+      // Можна додати окремий state для alerts або показати toast
+    });
 
-    // Set up auto-refresh every 5 seconds
-    refreshInterval = setInterval(() => {
-      fetchMetrics();
-    }, 5000);
+    // Listen to health updates
+    socket.on('health', (health: any) => {
+      console.log('[Health Update]', health);
+      // Можна додати окремий state для health
+    });
 
-    set({ isAutoRefresh: true });
+    // Listen to anomalies
+    socket.on('anomaly', (anomaly: any) => {
+      console.log('[Anomaly]', anomaly);
+      // Можна додати окремий state для anomalies
+    });
+
+    // Handle connection errors
+    socket.on('connect_error', (error: Error) => {
+      set({ error: `Connection error: ${error.message}`, isLoading: false });
+    });
+
+    set({ isAutoRefresh: true, isLoading: false });
   },
 
   stopAutoRefresh: () => {
-    if (refreshInterval) {
-      clearInterval(refreshInterval);
-      refreshInterval = null;
-    }
+    disconnectSocket();
     set({ isAutoRefresh: false });
   },
 

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, Key, BarChart3, FileText, LogOut, Activity, Shield } from 'lucide-react';
+import { LayoutDashboard, Key, BarChart3, FileText, LogOut, Activity, Shield, Heart, Settings, Bell } from 'lucide-react';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { Button } from '@/components/ui/button';
 
@@ -13,7 +13,11 @@ const navigation = [
   { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
   { name: 'Real-time Monitor', href: '/dashboard/monitoring', icon: Activity },
   { name: 'Security Center', href: '/dashboard/security', icon: Shield },
+  { name: 'Alert Rules', href: '/dashboard/alerts/rules', icon: Bell },
+  { name: 'Alerts History', href: '/dashboard/alerts/history', icon: FileText },
   { name: 'Audit Logs', href: '/dashboard/audit-logs', icon: FileText },
+  { name: 'System Health', href: '/dashboard/health', icon: Heart },
+  { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ];
 
 export function Sidebar() {

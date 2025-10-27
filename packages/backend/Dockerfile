@@ -1,8 +1,8 @@
 # Multi-stage build for NestJS Backend
 FROM node:20-alpine AS base
 
-# Install OpenSSL for Prisma
-RUN apk add --no-cache openssl libc6-compat
+# Install OpenSSL for Prisma and build tools for native modules
+RUN apk add --no-cache openssl libc6-compat python3 make g++
 
 WORKDIR /app
 
@@ -34,7 +34,7 @@ RUN npm run build
 # Production stage
 FROM node:20-alpine AS production
 
-RUN apk add --no-cache openssl libc6-compat
+RUN apk add --no-cache openssl libc6-compat python3 make g++
 
 WORKDIR /app
 

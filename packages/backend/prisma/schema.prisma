@@ -26,6 +26,8 @@ model User {
   ipRules             IpRule[]
   tokenRotations      TokenRotationHistory[]
   endpointRules       EndpointRule[]
+  settings            AdminSettings?
+  alertRules          AlertRule[]
 
   @@map("users")
 }
@@ -387,5 +389,125 @@ model EndpointRule {
   @@index([tokenId])
   @@index([endpoint])
   @@map("endpoint_rules")
+}
+
+// Admin Settings (налаштування адміністратора для Telegram та інше)
+model AdminSettings {
+  id                  String   @id @default(uuid())
+  userId              String   @map("user_id") @unique
+  telegramBotToken    String?  @map("telegram_bot_token") @db.Text
+  telegramChatId      String?  @map("telegram_chat_id")
+  alertsEnabled       Boolean  @default(false) @map("alerts_enabled")
+  emailNotifications  Boolean  @default(false) @map("email_notifications")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("admin_settings")
+}
+
+// Alert Rules (правила для автоматичних алертів)
+model AlertRule {
+  id                String     @id @default(uuid())
+  userId            String     @map("user_id")
+  name              String
+  description       String?    @db.Text
+  type              AlertType
+  metric            String     // error_rate, cpu_usage, memory_usage, etc.
+  threshold         Float      // e.g., 5.0 for 5% error rate
+  comparisonOp      String     @map("comparison_op") @db.VarChar(5) // >, <, >=, <=, ==
+  windowMinutes     Int        @map("window_minutes") @default(5)
+  severity          Severity   @default(WARNING)
+  cooldownMinutes   Int        @map("cooldown_minutes") @default(10)
+  notifyTelegram    Boolean    @default(true) @map("notify_telegram")
+  notifyEmail       Boolean    @default(false) @map("notify_email")
+  notifyWebhook     Boolean    @default(false) @map("notify_webhook")
+  webhookUrl        String?    @map("webhook_url") @db.Text
+  notifyOnRecovery  Boolean    @default(true) @map("notify_on_recovery")
+  isActive          Boolean    @default(true) @map("is_active")
+  lastTriggered     DateTime?  @map("last_triggered")
+  lastChecked       DateTime?  @map("last_checked")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+
+  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alerts            Alert[]
+
+  @@index([userId])
+  @@index([isActive])
+  @@index([type])
+  @@index([metric])
+  @@map("alert_rules")
+}
+
+enum AlertType {
+  // Performance
+  ERROR_RATE_HIGH
+  RESPONSE_TIME_SLOW
+  REQUESTS_SPIKE
+
+  // Resources
+  CPU_HIGH
+  MEMORY_HIGH
+  DISK_FULL
+
+  // Services
+  DATABASE_SLOW
+  DATABASE_CONNECTIONS_HIGH
+  REDIS_SLOW
+  REDIS_MEMORY_HIGH
+
+  // Application
+  EVENT_LOOP_BLOCKED
+  RATE_LIMIT_EXCEEDED
+  SERVICE_DOWN
+
+  // ABills
+  ABILLS_UNREACHABLE
+  ABILLS_SYNC_FAILED
+
+  // Other
+  ANOMALY_DETECTED
+  CUSTOM
+}
+
+// Alert History (історія відправлених алертів)
+model Alert {
+  id                String    @id @default(uuid())
+  ruleId            String    @map("rule_id")
+  ruleName          String    @map("rule_name")
+  type              AlertType
+  severity          Severity
+  message           String    @db.Text
+  metric            String
+  currentValue      Float     @map("current_value")
+  threshold         Float
+  metadata          Json?     // Additional context (affected endpoints, duration, etc.)
+  sentAt            DateTime  @default(now()) @map("sent_at")
+  channelTelegram   Boolean   @default(false) @map("channel_telegram")
+  channelEmail      Boolean   @default(false) @map("channel_email")
+  channelWebhook    Boolean   @default(false) @map("channel_webhook")
+  resolved          Boolean   @default(false)
+  resolvedAt        DateTime? @map("resolved_at")
+  recoveryMessage   String?   @map("recovery_message") @db.Text
+  acknowledgedBy    String?   @map("acknowledged_by")
+  acknowledgedAt    DateTime? @map("acknowledged_at")
+
+  rule              AlertRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+  @@index([sentAt])
+  @@index([severity])
+  @@index([resolved])
+  @@index([type])
+  @@map("alerts")
+}
+
+enum Severity {
+  INFO
+  WARNING
+  CRITICAL
+  EMERGENCY
 }
 
