@@ -7,6 +7,7 @@ import type {
   RateLimitEvent,
   RateLimitStats,
   AuditLogResponse,
+  EndpointsByToken,
 } from '../types';
 
 export const analyticsApi = {
@@ -26,6 +27,16 @@ export const analyticsApi = {
 
   async getTopEndpoints(): Promise<TopEndpoint[]> {
     const { data } = await apiClient.get<TopEndpoint[]>('/analytics/top-endpoints');
+    return data;
+  },
+
+  async getEndpointsByToken(
+    period: '24h' | '7d' | '30d' = '24h',
+    tokenId?: string
+  ): Promise<EndpointsByToken> {
+    const { data } = await apiClient.get<EndpointsByToken>('/analytics/endpoints-by-token', {
+      params: { period, tokenId },
+    });
     return data;
   },
 

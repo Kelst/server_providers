@@ -84,6 +84,28 @@ export interface TopEndpoint {
   avgResponseTime: number;
 }
 
+// Endpoints by token types
+export interface EndpointStats {
+  endpoint: string;
+  method: string;
+  totalRequests: number;
+  successRequests: number;
+  errorRequests: number;
+  successRate: number;
+  avgResponseTime: number;
+}
+
+export interface TokenEndpointStats {
+  tokenId: string;
+  projectName: string;
+  endpoints: EndpointStats[];
+}
+
+export interface EndpointsByToken {
+  period: '24h' | '7d' | '30d';
+  tokens: TokenEndpointStats[];
+}
+
 export interface ErrorLog {
   id: string;
   endpoint: string;

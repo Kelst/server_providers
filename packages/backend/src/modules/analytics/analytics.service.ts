@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { AnalyticsPeriod } from './dto/endpoints-by-token.dto';
 
 @Injectable()
 export class AnalyticsService {
@@ -964,6 +965,139 @@ export class AnalyticsService {
         errorRate: calculateChange(current.errorRate, previous.errorRate),
         avgResponseTime: calculateChange(current.avgResponseTime, previous.avgResponseTime),
       },
+    };
+  }
+
+  /**
+   * Get endpoints grouped by tokens with statistics
+   *
+   * @param userId - User ID
+   * @param period - Time period (24h, 7d, 30d)
+   * @param tokenId - Optional specific token ID
+   * @returns Tokens with their endpoint statistics
+   */
+  async getEndpointsByToken(
+    userId: string,
+    period: AnalyticsPeriod = AnalyticsPeriod.HOURS_24,
+    tokenId?: string,
+  ) {
+    // Calculate time range based on period
+    const periodHours = {
+      [AnalyticsPeriod.HOURS_24]: 24,
+      [AnalyticsPeriod.DAYS_7]: 24 * 7,
+      [AnalyticsPeriod.DAYS_30]: 24 * 30,
+    };
+
+    const hoursAgo = periodHours[period] || 24;
+    const startDate = new Date(Date.now() - hoursAgo * 60 * 60 * 1000);
+
+    // Get tokens
+    const tokens = await this.prisma.apiToken.findMany({
+      where: {
+        createdBy: userId,
+        ...(tokenId && { id: tokenId }),
+      },
+      select: {
+        id: true,
+        projectName: true,
+      },
+      orderBy: {
+        projectName: 'asc',
+      },
+    });
+
+    // For each token, get endpoint statistics
+    const tokensWithEndpoints = await Promise.all(
+      tokens.map(async (token) => {
+        // Get all requests for this token in the period
+        const requests = await this.prisma.apiRequest.findMany({
+          where: {
+            tokenId: token.id,
+            createdAt: { gte: startDate },
+          },
+          select: {
+            endpoint: true,
+            method: true,
+            statusCode: true,
+            responseTime: true,
+          },
+        });
+
+        // Group by endpoint + method
+        const endpointMap = new Map<string, {
+          endpoint: string;
+          method: string;
+          total: number;
+          success: number;
+          error: number;
+          responseTimes: number[];
+        }>();
+
+        requests.forEach((req) => {
+          const key = `${req.endpoint}|${req.method}`;
+
+          if (!endpointMap.has(key)) {
+            endpointMap.set(key, {
+              endpoint: req.endpoint,
+              method: req.method,
+              total: 0,
+              success: 0,
+              error: 0,
+              responseTimes: [],
+            });
+          }
+
+          const stats = endpointMap.get(key)!;
+          stats.total++;
+          stats.responseTimes.push(req.responseTime);
+
+          if (req.statusCode < 400) {
+            stats.success++;
+          } else {
+            stats.error++;
+          }
+        });
+
+        // Convert map to array with calculated metrics
+        const endpoints = Array.from(endpointMap.values()).map((stats) => {
+          const avgResponseTime =
+            stats.responseTimes.length > 0
+              ? Math.round(
+                  stats.responseTimes.reduce((a, b) => a + b, 0) / stats.responseTimes.length,
+                )
+              : 0;
+
+          const successRate =
+            stats.total > 0 ? Math.round((stats.success / stats.total) * 100 * 100) / 100 : 0;
+
+          return {
+            endpoint: stats.endpoint,
+            method: stats.method,
+            totalRequests: stats.total,
+            successRequests: stats.success,
+            errorRequests: stats.error,
+            successRate,
+            avgResponseTime,
+          };
+        });
+
+        // Sort by total requests descending
+        endpoints.sort((a, b) => b.totalRequests - a.totalRequests);
+
+        return {
+          tokenId: token.id,
+          projectName: token.projectName,
+          endpoints,
+        };
+      }),
+    );
+
+    // Filter out tokens with no endpoints
+    const filteredTokens = tokensWithEndpoints.filter((t) => t.endpoints.length > 0);
+
+    return {
+      period,
+      tokens: filteredTokens,
     };
   }
 }

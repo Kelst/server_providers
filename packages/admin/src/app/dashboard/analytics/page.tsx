@@ -5,12 +5,14 @@ import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { analyticsApi } from '@/lib/api/analyticsApi';
-import type { RequestsOverTime, TopEndpoint, RateLimitEvent, RateLimitStats, ErrorLog } from '@/lib/types';
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import type { RequestsOverTime, TopEndpoint, RateLimitEvent, RateLimitStats, ErrorLog, EndpointsByToken } from '@/lib/types';
+import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
@@ -23,9 +25,19 @@ export default function AnalyticsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [period, setPeriod] = useState<'24h' | '7d' | '30d'>('7d');
 
+  // Endpoints by token state
+  const [endpointsByToken, setEndpointsByToken] = useState<EndpointsByToken | null>(null);
+  const [endpointsPeriod, setEndpointsPeriod] = useState<'24h' | '7d' | '30d'>('24h');
+  const [selectedTokenFilter, setSelectedTokenFilter] = useState<string>('all');
+  const [expandedTokens, setExpandedTokens] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     loadAnalyticsData();
   }, [period]);
+
+  useEffect(() => {
+    loadEndpointsByToken();
+  }, [endpointsPeriod, selectedTokenFilter]);
 
   const loadAnalyticsData = async () => {
     setIsLoading(true);
@@ -48,6 +60,26 @@ export default function AnalyticsPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const loadEndpointsByToken = async () => {
+    try {
+      const tokenId = selectedTokenFilter === 'all' ? undefined : selectedTokenFilter;
+      const data = await analyticsApi.getEndpointsByToken(endpointsPeriod, tokenId);
+      setEndpointsByToken(data);
+    } catch (error) {
+      console.error('Failed to load endpoints by token:', error);
+    }
+  };
+
+  const toggleToken = (tokenId: string) => {
+    const newExpanded = new Set(expandedTokens);
+    if (newExpanded.has(tokenId)) {
+      newExpanded.delete(tokenId);
+    } else {
+      newExpanded.add(tokenId);
+    }
+    setExpandedTokens(newExpanded);
   };
 
   // Prepare data for charts
@@ -168,56 +200,145 @@ export default function AnalyticsPage() {
 
           {/* Endpoints Tab */}
           <TabsContent value="endpoints" className="space-y-4 mt-4">
+            {/* Filters */}
             <Card>
               <CardHeader>
-                <CardTitle>Top Endpoints</CardTitle>
-                <CardDescription>Most frequently accessed endpoints</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[400px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={topEndpoints.slice(0, 10)} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis type="number" />
-                      <YAxis dataKey="endpoint" type="category" width={200} style={{ fontSize: '12px' }} />
-                      <Tooltip />
-                      <Bar dataKey="count" fill="hsl(var(--primary))" />
-                    </BarChart>
-                  </ResponsiveContainer>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Endpoints by Token</CardTitle>
+                    <CardDescription>View which tokens are calling which endpoints</CardDescription>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    {/* Token Filter */}
+                    <Select value={selectedTokenFilter} onValueChange={setSelectedTokenFilter}>
+                      <SelectTrigger className="w-[200px]">
+                        <SelectValue placeholder="All tokens" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All tokens</SelectItem>
+                        {endpointsByToken?.tokens.map((token) => (
+                          <SelectItem key={token.tokenId} value={token.tokenId}>
+                            {token.projectName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {/* Period Buttons */}
+                    <div className="flex gap-1 border rounded-md p-1">
+                      <Button
+                        size="sm"
+                        variant={endpointsPeriod === '24h' ? 'default' : 'ghost'}
+                        onClick={() => setEndpointsPeriod('24h')}
+                      >
+                        24h
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={endpointsPeriod === '7d' ? 'default' : 'ghost'}
+                        onClick={() => setEndpointsPeriod('7d')}
+                      >
+                        7d
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={endpointsPeriod === '30d' ? 'default' : 'ghost'}
+                        onClick={() => setEndpointsPeriod('30d')}
+                      >
+                        30d
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-              </CardContent>
+              </CardHeader>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Endpoint Performance</CardTitle>
-                <CardDescription>Average response time per endpoint</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Endpoint</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead className="text-right">Requests</TableHead>
-                      <TableHead className="text-right">Avg Response Time</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {topEndpoints.slice(0, 10).map((endpoint, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell className="font-mono text-xs">{endpoint.endpoint}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{endpoint.method}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right">{endpoint.count}</TableCell>
-                        <TableCell className="text-right">{endpoint.avgResponseTime.toFixed(0)}ms</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+            {/* Token Cards */}
+            {endpointsByToken?.tokens && endpointsByToken.tokens.length > 0 ? (
+              <div className="space-y-3">
+                {endpointsByToken.tokens.map((token) => {
+                  const isExpanded = expandedTokens.has(token.tokenId);
+                  const totalRequests = token.endpoints.reduce((sum, ep) => sum + ep.totalRequests, 0);
+                  const avgSuccessRate = token.endpoints.length > 0
+                    ? token.endpoints.reduce((sum, ep) => sum + ep.successRate, 0) / token.endpoints.length
+                    : 0;
+
+                  return (
+                    <Card key={token.tokenId}>
+                      <CardHeader className="cursor-pointer" onClick={() => toggleToken(token.tokenId)}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                            <div>
+                              <CardTitle className="text-lg">{token.projectName}</CardTitle>
+                              <CardDescription>
+                                {token.endpoints.length} endpoints • {totalRequests.toLocaleString()} requests • {avgSuccessRate.toFixed(1)}% success rate
+                              </CardDescription>
+                            </div>
+                          </div>
+                          <Badge variant="outline">{token.endpoints.length}</Badge>
+                        </div>
+                      </CardHeader>
+
+                      {isExpanded && (
+                        <CardContent>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Endpoint</TableHead>
+                                <TableHead>Method</TableHead>
+                                <TableHead className="text-right">Requests</TableHead>
+                                <TableHead className="text-right">Success Rate</TableHead>
+                                <TableHead className="text-right">Avg Time</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {token.endpoints.map((endpoint, idx) => (
+                                <TableRow key={idx}>
+                                  <TableCell className="font-mono text-xs max-w-[300px] truncate">
+                                    {endpoint.endpoint}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline">{endpoint.method}</Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {endpoint.totalRequests.toLocaleString()}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <span
+                                      className={
+                                        endpoint.successRate >= 95
+                                          ? 'text-green-600'
+                                          : endpoint.successRate >= 80
+                                          ? 'text-yellow-600'
+                                          : 'text-red-600'
+                                      }
+                                    >
+                                      {endpoint.successRate.toFixed(1)}%
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {endpoint.avgResponseTime}ms
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </CardContent>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="py-8">
+                  <p className="text-center text-muted-foreground">
+                    No endpoint data available for the selected period
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* Errors Tab */}

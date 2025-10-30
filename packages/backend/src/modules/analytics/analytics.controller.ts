@@ -1,7 +1,12 @@
 import { Controller, Get, UseGuards, Request, Query, Param } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { AnalyticsService } from './analytics.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import {
+  GetEndpointsByTokenQueryDto,
+  EndpointsByTokenResponseDto,
+  AnalyticsPeriod,
+} from './dto/endpoints-by-token.dto';
 
 @ApiTags('analytics')
 @ApiBearerAuth('JWT-auth')
@@ -44,6 +49,39 @@ export class AnalyticsController {
   getTopEndpoints(@Request() req, @Query('limit') limit?: string) {
     const limitNum = limit ? parseInt(limit, 10) : 10;
     return this.analyticsService.getTopEndpoints(req.user.id, limitNum);
+  }
+
+  @Get('endpoints-by-token')
+  @ApiOperation({
+    summary: 'Get endpoints grouped by tokens',
+    description:
+      'Returns endpoints statistics grouped by tokens. Used for analytics dashboard to show which tokens are calling which endpoints with success rates.',
+  })
+  @ApiQuery({
+    name: 'period',
+    enum: AnalyticsPeriod,
+    required: false,
+    description: 'Time period for analytics (default: 24h)',
+    example: AnalyticsPeriod.HOURS_24,
+  })
+  @ApiQuery({
+    name: 'tokenId',
+    required: false,
+    description: 'Filter by specific token ID',
+    type: String,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Endpoints by token retrieved',
+    type: EndpointsByTokenResponseDto,
+  })
+  getEndpointsByToken(
+    @Request() req,
+    @Query('period') period?: AnalyticsPeriod,
+    @Query('tokenId') tokenId?: string,
+  ): Promise<EndpointsByTokenResponseDto> {
+    const periodValue = period || AnalyticsPeriod.HOURS_24;
+    return this.analyticsService.getEndpointsByToken(req.user.id, periodValue, tokenId);
   }
 
   @Get('errors')
