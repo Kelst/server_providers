@@ -217,7 +217,6 @@ export class BillingService {
       uid: userData.uid,
       login: userData.login,
       company: userData.company,
-      status: userData.status,
       message: 'Successfully authenticated',
     };
   }
@@ -988,7 +987,6 @@ export class BillingService {
         uid: user.uid,
         login: user.login,
         company: user.company,
-        status: user.status,
         message: 'Успішно автентифіковано',
       };
     } catch (error) {

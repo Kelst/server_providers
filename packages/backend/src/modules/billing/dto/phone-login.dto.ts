@@ -110,13 +110,6 @@ export class PhoneLoginVerifyResponseDto {
   company?: string;
 
   @ApiProperty({
-    description: 'User status (only if success=true)',
-    example: 1,
-    required: false,
-  })
-  status?: number;
-
-  @ApiProperty({
     description: 'Response message',
     example: 'Успішно автентифіковано',
   })

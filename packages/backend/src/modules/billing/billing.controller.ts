@@ -6,6 +6,7 @@ import {
   UseGuards,
   Param,
   ParseIntPipe,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -13,6 +14,7 @@ import {
   ApiBearerAuth,
   ApiResponse,
   ApiParam,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { ApiTokenGuard } from '../auth/guards/api-token.guard';
 import { ScopeGuard } from '../../common/guards/scope.guard';
@@ -54,6 +56,7 @@ import { AvailableTariffsResponseDto } from './dto/available-tariffs.dto';
 import { ChangeTariffDto, ChangeTariffResponseDto } from './dto/change-tariff.dto';
 import { GeneratePaymentLinkDto, PaymentLinkResponseDto } from './dto/payment-link.dto';
 import { AvailablePaymentMethodsResponseDto } from './dto/available-payment-methods.dto';
+import { GetNeighborsQueryDto, NeighborsResponseDto, NeighborSearchType } from './dto/neighbors.dto';
 
 @ApiTags('billing')
 @ApiBearerAuth('API-token')
@@ -134,7 +137,7 @@ export class BillingController {
   @Get('users/:uid')
   @ApiOperation({
     summary: 'Get basic user information',
-    description: 'Returns basic user info: name, phone, address, login, password, telegram',
+    description: 'Returns basic user info: name, phone, address, login, password, telegram, status (from internet_main.disable: 0=active, 1=disabled, 3=paused)',
   })
   @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
   @ApiResponse({ status: 200, description: 'User basic info', type: UserBasicInfoDto })
@@ -148,7 +151,7 @@ export class BillingController {
   @Get('users/:uid/internet')
   @ApiOperation({
     summary: 'Get internet connection information',
-    description: 'Returns internet connection details: IP, status, CID',
+    description: 'Returns internet connection details: IP, status (from internet_main.disable: 0=active, 1=disabled, 3=paused), registered MAC address',
   })
   @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
   @ApiResponse({ status: 200, description: 'Internet info', type: InternetInfoDto })
@@ -276,6 +279,32 @@ export class BillingController {
     @Param('uid', ParseIntPipe) uid: number,
   ): Promise<FullUserDataDto> {
     return this.userDataService.getFullUserData(uid);
+  }
+
+  @Get('users/:uid/neighbors')
+  @ApiOperation({
+    summary: 'Get subscriber neighbors',
+    description:
+      'Find neighbors by building (same building) or street (all buildings on street). Used for network troubleshooting - to determine if issue is specific to subscriber or affects neighbors.',
+  })
+  @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
+  @ApiQuery({
+    name: 'type',
+    enum: NeighborSearchType,
+    description: 'Search type: building (same building) or street (all buildings on street)',
+    example: NeighborSearchType.BUILDING,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of neighbors grouped by location',
+    type: NeighborsResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getNeighbors(
+    @Param('uid', ParseIntPipe) uid: number,
+    @Query() query: GetNeighborsQueryDto,
+  ): Promise<NeighborsResponseDto> {
+    return this.userDataService.getNeighbors(uid, query.type);
   }
 
   @Get('users/:uid/fees')

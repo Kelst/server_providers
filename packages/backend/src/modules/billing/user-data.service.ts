@@ -15,6 +15,7 @@ import { FeesResponseDto, FeeItemDto } from './dto/fees.dto';
 import { PaymentsResponseDto, PaymentItemDto } from './dto/payments.dto';
 import { AvailableTariffsResponseDto, AvailableTariffDto } from './dto/available-tariffs.dto';
 import { SessionHistoryResponseDto, SessionHistoryItemDto } from './dto/session-history.dto';
+import { NeighborsResponseDto, NeighborInfoDto, NeighborSearchType } from './dto/neighbors.dto';
 import { intToIp } from './helpers/ip.helper';
 import { convertDataToMB, formatTime, getDifference } from './helpers/data.helper';
 import { processPhoneNumber, getLowestPriorityValue } from './helpers/phone.helper';
@@ -55,7 +56,7 @@ export class UserDataService {
 
       // Get login and password
       const sqlLogin = `
-        SELECT u.id as login, DECODE(u.password, ?) as password, c.company, c.status
+        SELECT u.id as login, DECODE(u.password, ?) as password, c.company
         FROM users u
         LEFT JOIN config_gid c ON u.gid = c.gid
         WHERE u.uid = ?
@@ -70,7 +71,12 @@ export class UserDataService {
         ? new TextDecoder('utf-8').decode(loginData[0].password)
         : String(loginData[0]?.password || '');
       const company = loginData[0]?.company || '';
-      const status = loginData[0]?.status || 0;
+
+      // Get status from internet_main.disable
+      // disable=0: active, disable=1: disabled, disable=3: paused
+      const sqlStatus = `SELECT disable FROM internet_main WHERE uid = ?`;
+      const statusData = await this.mysqlService.query<any[]>(sqlStatus, [uid]);
+      const status = statusData.length > 0 ? (statusData[0]?.disable ?? 0) : 0;
 
       // Get phone
       const sqlPhone = `SELECT * FROM users_contacts WHERE uid = ?`;
@@ -147,8 +153,8 @@ export class UserDataService {
         internetId: String(row.id),
         ip,
         isStaticIp: !ip.startsWith('100'),
-        status: row.disable === 0,
-        cid: String(row.cid || ''),
+        status: row.disable ?? 0,
+        registeredMac: String(row.cid || ''),
         statusInternet,
       };
     } catch (error) {
@@ -581,14 +587,13 @@ export class UserDataService {
         password: basicInfo.password,
         telegramId: basicInfo.telegramId,
         company: basicInfo.company,
-        userStatus: basicInfo.status,
 
         // Internet Info
         internetId: internetInfo.internetId,
         ip: internetInfo.ip,
         isStaticIp: internetInfo.isStaticIp,
         status: internetInfo.status,
-        cid: internetInfo.cid,
+        registeredMac: internetInfo.registeredMac,
 
         // Session Info
         guestIp: sessionInfo.guestIp,
@@ -753,6 +758,121 @@ export class UserDataService {
       };
     } catch (error) {
       this.logger.error(`Error getting session history for uid ${uid}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get subscriber neighbors (for network troubleshooting)
+   *
+   * @param uid - User ID
+   * @param type - Search type: 'building' (same building) or 'street' (all buildings on street)
+   * @returns List of neighbors grouped by location
+   */
+  async getNeighbors(uid: number, type: NeighborSearchType): Promise<NeighborsResponseDto> {
+    try {
+      this.logger.log(`Getting neighbors for uid ${uid}, type: ${type}`);
+
+      let results: any[];
+
+      if (type === NeighborSearchType.BUILDING) {
+        // Search neighbors in the same building
+        const sqlBuilding = `
+          SELECT
+            d.name as district_city,
+            s.name as street_name,
+            b.number as building_number,
+            CONCAT(d.name, ', вул. ', s.name, ', буд. ', b.number) as full_address,
+            COUNT(DISTINCT u_all.id) as subscribers_count,
+            GROUP_CONCAT(
+              DISTINCT u_all.id
+              ORDER BY u_all.id
+              SEPARATOR ', '
+            ) as subscriber_login,
+            GROUP_CONCAT(
+              DISTINCT u_all.uid
+              ORDER BY u_all.id
+              SEPARATOR ', '
+            ) as subscriber_uid
+          FROM users u_target
+          JOIN users_pi up_target ON up_target.uid = u_target.uid
+          JOIN builds b ON b.id = up_target.location_id
+          JOIN streets s ON s.id = b.street_id
+          JOIN districts d ON d.id = s.district_id
+          JOIN users_pi up_all ON up_all.location_id = b.id
+          JOIN users u_all ON u_all.uid = up_all.uid
+          WHERE u_target.uid = ?
+            AND u_all.uid != u_target.uid
+          GROUP BY d.id, s.id, b.id, d.name, s.name, b.number
+        `;
+
+        results = await this.mysqlService.query<any[]>(sqlBuilding, [uid]);
+      } else {
+        // Search neighbors on the same street (all buildings)
+        const sqlStreet = `
+          WITH target_location AS (
+            SELECT
+              s.id as street_id,
+              s.name as street_name,
+              d.name as district_name,
+              b.number as user_building,
+              u.uid as target_uid
+            FROM users u
+            JOIN users_pi up ON up.uid = u.uid
+            JOIN builds b ON b.id = up.location_id
+            JOIN streets s ON s.id = b.street_id
+            JOIN districts d ON d.id = s.district_id
+            WHERE u.uid = ?
+          )
+          SELECT
+            tl.district_name as district_city,
+            tl.street_name as street_name,
+            b.number as building_number,
+            CONCAT(tl.district_name, ', вул. ', tl.street_name, ', буд. ', b.number) as full_address,
+            COUNT(DISTINCT u.id) as subscribers_count,
+            GROUP_CONCAT(
+              DISTINCT u.id
+              ORDER BY u.id
+              SEPARATOR ', '
+            ) as subscriber_login,
+            GROUP_CONCAT(
+              DISTINCT u.uid
+              ORDER BY u.id
+              SEPARATOR ', '
+            ) as subscriber_uid,
+            CASE WHEN b.number = tl.user_building THEN 1 ELSE 0 END as is_user_building
+          FROM target_location tl
+          JOIN builds b ON b.street_id = tl.street_id
+          JOIN users_pi up ON up.location_id = b.id
+          JOIN users u ON u.uid = up.uid
+          WHERE u.uid != tl.target_uid
+          GROUP BY tl.district_name, tl.street_name, b.number, tl.user_building
+          ORDER BY is_user_building DESC, CAST(b.number AS UNSIGNED), b.number
+        `;
+
+        results = await this.mysqlService.query<any[]>(sqlStreet, [uid]);
+      }
+
+      // Map results to DTO
+      const neighbors: NeighborInfoDto[] = results.map((row) => ({
+        district_city: row.district_city || '',
+        street_name: row.street_name || '',
+        building_number: String(row.building_number || ''),
+        full_address: row.full_address || '',
+        subscribers_count: Number(row.subscribers_count || 0),
+        subscriber_login: row.subscriber_login || '',
+        subscriber_uid: row.subscriber_uid || '',
+        ...(type === NeighborSearchType.STREET && { is_user_building: row.is_user_building }),
+      }));
+
+      this.logger.log(`Found ${neighbors.length} neighbor location(s) for uid ${uid}`);
+
+      return {
+        type,
+        neighbors,
+      };
+    } catch (error) {
+      this.logger.error(`Error getting neighbors for uid ${uid}:`, error);
       throw error;
     }
   }

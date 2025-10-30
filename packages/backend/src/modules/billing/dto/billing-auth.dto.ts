@@ -52,12 +52,6 @@ export class BillingLoginResponseDto {
   company: string;
 
   @ApiProperty({
-    description: 'User status from config_gid table (0 or 1)',
-    example: 1,
-  })
-  status: number;
-
-  @ApiProperty({
     description: 'Success/error message',
     example: 'Successfully authenticated',
   })

@@ -113,10 +113,16 @@ The backend uses **two authentication strategies**:
 - `billing/`: Billing endpoints including auth and operations (require API token with "billing" scope)
 - `security/`: Security features including IP rules, audit logs, and security events
 - `notifications/`: Notification system for SMS and Telegram messages
+- `health/`: Health checks and system monitoring endpoints
+- `websocket/`: Real-time metrics streaming via Socket.IO
+- `settings/`: Admin settings management (Telegram bot, rate limits, timeouts)
+- `alerts/`: Alert rules and monitoring system with configurable thresholds
 - `database/`: Prisma service wrapper (global module)
 
 **Common utilities** (packages/backend/src/common/):
 - `guards/scope.guard.ts`: Validates API token scopes
+- `guards/endpoint-access.guard.ts`: Blocks access to specific endpoints per token (supports wildcards)
+- `guards/rate-limit.guard.ts`: Per-token rate limiting
 - `decorators/require-scopes.decorator.ts`: Decorator for requiring specific scopes
 - `constants/scopes.constants.ts`: Available scope definitions
 
@@ -126,6 +132,10 @@ The backend uses **two authentication strategies**:
   - Tracks endpoint, method, status, response time, IP, user agent
   - Sanitizes sensitive fields (passwords, tokens, keys) before logging
   - Limits payload size to 10KB (truncates larger payloads)
+- `request-timeout.interceptor.ts`: Configurable request timeout (default 30s, configurable via AdminSettings)
+
+**Global guards** (packages/backend/src/guards/):
+- `configurable-throttler.guard.ts`: Global rate limiting (default 100 req/min, configurable via AdminSettings)
 
 ### Database Schema
 
@@ -157,6 +167,11 @@ Key models in `packages/backend/prisma/schema.prisma`:
 **Billing models:**
 - `CreditHistory`: Monthly credit usage tracking
 - `TariffChangeHistory`: History of tariff plan changes
+
+**Monitoring & alerts models:**
+- `AdminSettings`: Admin configuration (Telegram bot, rate limits, timeouts)
+- `AlertRule`: Configurable alert rules with thresholds and notification channels
+- `Alert`: History of triggered alerts with recovery tracking
 
 ### Configuration
 
@@ -241,10 +256,12 @@ When running with Docker:
 
 ## Rate Limiting
 
-- Global rate limiting via `@nestjs/throttler` (100 requests/minute)
-- Per-token rate limiting via `ApiToken.rateLimit` field
-- Redis used for distributed rate limit tracking
-- Rate limit violations are logged to `RateLimitEvent` table
+- **Global rate limiting**: Enforced by `ConfigurableThrottlerGuard` (default 100 req/min, configurable via AdminSettings)
+  - In-memory storage with automatic cleanup
+  - Per-IP tracking
+  - Configurable via `AdminSettings.globalRateLimit`
+- **Per-token rate limiting**: Via `ApiToken.rateLimit` field
+- **Rate limit violations**: Logged to `RateLimitEvent` table with full context
 
 ## Important Patterns
 
@@ -266,6 +283,59 @@ Use the scope system to control access to endpoints:
 The system includes extensive security features:
 - **IP Rules**: Whitelist/blacklist IPs per token (IpRule model)
 - **Endpoint Rules**: Block specific endpoints per token (EndpointRule model)
+  - Supports wildcards: `*` for single segment, `**` for multiple segments
+  - Example: `/api/billing/users/*/payments` blocks all user payment endpoints
+  - Enforced by `EndpointAccessGuard`
 - **Audit Logging**: All token changes are logged (TokenAuditLog model)
 - **Security Events**: Suspicious activity tracking (SecurityEvent model)
 - **Token Rotation**: Track token regenerations (TokenRotationHistory model)
+- **Brute Force Protection**: Login attempt tracking with rate limiting
+
+### Request Timeouts
+All API requests have configurable timeouts:
+- Default timeout: 30 seconds
+- Configurable per-admin via `AdminSettings.apiRequestTimeout`
+- Enforced by `RequestTimeoutInterceptor` (global interceptor)
+- Cached for 30 seconds to reduce database load
+
+### Real-Time Monitoring
+The system includes WebSocket support for real-time metrics:
+- **WebSocket Gateway**: `MetricsGateway` on `/metrics` namespace
+- **Admin panel integration**: Live dashboard updates via Socket.IO
+- **Metrics**: Request rates, error rates, response times, system health
+
+### Alert System
+Configurable alert rules for monitoring:
+- **Alert types**: Error rates, response time, CPU/memory/disk usage, database performance, etc.
+- **Notification channels**: Telegram, Email, Webhook
+- **Severity levels**: INFO, WARNING, CRITICAL, EMERGENCY
+- **Cooldown**: Prevents alert spam with configurable cooldown periods
+- **Recovery notifications**: Optional alerts when issues are resolved
+- **Alert history**: Full tracking in `Alert` model with acknowledgment support
+
+## Admin Panel Architecture
+
+The admin panel is built with **Next.js 14** and modern React patterns:
+
+**Tech Stack:**
+- **Next.js 14**: App Router with React Server Components
+- **TypeScript**: Full type safety
+- **Tailwind CSS**: Utility-first styling
+- **shadcn/ui**: Pre-built accessible components (Radix UI primitives)
+- **React Query**: Server state management and caching
+- **Zustand**: Client state management
+- **Socket.IO Client**: Real-time updates
+- **Recharts**: Analytics visualizations
+- **React Hook Form + Zod**: Form handling and validation
+
+**Key Features:**
+- `/dashboard`: Main dashboard with real-time metrics
+- `/dashboard/tokens`: Token management with CRUD operations
+- `/dashboard/analytics`: Request analytics and visualizations
+- `/dashboard/monitoring`: System health and performance metrics
+- `/dashboard/security`: Security events and IP rules
+- `/dashboard/alerts/rules`: Alert rule configuration
+- `/dashboard/alerts/history`: Alert history and acknowledgment
+- `/dashboard/settings`: Admin settings (Telegram bot, rate limits, timeouts)
+- `/dashboard/audit-logs`: Token audit trail
+- **Real-time WebSocket connection**: Live metrics updates without polling

@@ -28,7 +28,10 @@ export class UserBasicInfoDto {
   @ApiProperty({ description: 'Company name', example: 'Intelekt' })
   company: string;
 
-  @ApiProperty({ description: 'User status', example: 1 })
+  @ApiProperty({
+    description: 'User status from internet_main.disable (0: active, 1: disabled, 3: paused)',
+    example: 0
+  })
   status: number;
 }
 
@@ -45,11 +48,17 @@ export class InternetInfoDto {
   @ApiProperty({ description: 'Is static IP', example: true })
   isStaticIp: boolean;
 
-  @ApiProperty({ description: 'Connection status', example: true })
-  status: boolean;
+  @ApiProperty({
+    description: 'Connection status from internet_main.disable (0: active, 1: disabled, 3: paused)',
+    example: 0
+  })
+  status: number;
 
-  @ApiProperty({ description: 'CID (Connection ID)', example: 'cid_789' })
-  cid: string;
+  @ApiProperty({
+    description: 'Registered MAC address (router MAC). May be outdated if router was replaced.',
+    example: '90:9a:4a:95:5f:20'
+  })
+  registeredMac: string;
 
   @ApiProperty({ description: 'Current online status', example: true })
   statusInternet: boolean;
@@ -189,9 +198,6 @@ export class FullUserDataDto {
   @ApiProperty({ description: 'Company name', example: 'Intelekt' })
   company: string;
 
-  @ApiProperty({ description: 'User status', example: 1 })
-  userStatus: number;
-
   // Internet Info
   @ApiProperty({ description: 'Internet connection ID', example: 'inet_12345' })
   internetId: string;
@@ -202,11 +208,17 @@ export class FullUserDataDto {
   @ApiProperty({ description: 'Is static IP', example: true })
   isStaticIp: boolean;
 
-  @ApiProperty({ description: 'Connection status', example: true })
-  status: boolean;
+  @ApiProperty({
+    description: 'Connection status from internet_main.disable (0: active, 1: disabled, 3: paused)',
+    example: 0
+  })
+  status: number;
 
-  @ApiProperty({ description: 'CID (Connection ID)', example: 'cid_789' })
-  cid: string;
+  @ApiProperty({
+    description: 'Registered MAC address (router MAC). May be outdated if router was replaced.',
+    example: '90:9a:4a:95:5f:20'
+  })
+  registeredMac: string;
 
   // Session Info
   @ApiProperty({ description: 'Guest/dynamic IP address', example: '100.64.1.10' })
