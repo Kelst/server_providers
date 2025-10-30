@@ -23,6 +23,10 @@ export default Joi.object({
   ADMIN_ACTION_IP: Joi.string().default('3166694701'),
   ADMIN_ACTION_AID: Joi.string().default('333'),
 
+  // Userside API Configuration
+  USERSIDE_API_URL: Joi.string().required(),
+  USERSIDE_API_KEY: Joi.string().required(),
+
   // Telegram Bot API URLs
   TELEGRAM_API_OPTICOM: Joi.string().optional(),
   TELEGRAM_API_VELES: Joi.string().optional(),

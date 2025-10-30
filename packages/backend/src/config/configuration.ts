@@ -27,6 +27,10 @@ export default () => ({
     adminActionIp: process.env.ADMIN_ACTION_IP || '3166694701',
     adminActionAid: process.env.ADMIN_ACTION_AID || '333',
   },
+  userside: {
+    apiUrl: process.env.USERSIDE_API_URL,
+    apiKey: process.env.USERSIDE_API_KEY,
+  },
   notifications: {
     telegram: {
       opticom: process.env.TELEGRAM_API_OPTICOM,

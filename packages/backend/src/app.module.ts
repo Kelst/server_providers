@@ -10,6 +10,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { SecurityModule } from './modules/security/security.module';
 import { SharedApiModule } from './modules/shared-api/shared-api.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { UsersideModule } from './modules/userside/userside.module';
 import { HealthModule } from './modules/health/health.module';
 import { WebSocketModule } from './modules/websocket/websocket.module';
 import { SettingsModule } from './modules/settings/settings.module';
@@ -38,6 +39,7 @@ import validationSchema from './config/validation.schema';
     SecurityModule,
     SharedApiModule,
     BillingModule,
+    UsersideModule,
     HealthModule,
     WebSocketModule,
     SettingsModule,
