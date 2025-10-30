@@ -401,6 +401,7 @@ model AdminSettings {
   emailNotifications  Boolean  @default(false) @map("email_notifications")
   apiRequestTimeout   Int      @default(30000) @map("api_request_timeout") // milliseconds
   databaseQueryTimeout Int     @default(10000) @map("database_query_timeout") // milliseconds
+  globalRateLimit     Int      @default(100) @map("global_rate_limit") // requests per minute
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 

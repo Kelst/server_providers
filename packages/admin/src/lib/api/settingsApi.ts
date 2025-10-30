@@ -9,6 +9,7 @@ export interface AdminSettings {
   emailNotifications: boolean;
   apiRequestTimeout: number; // milliseconds
   databaseQueryTimeout: number; // milliseconds
+  globalRateLimit: number; // requests per minute
   createdAt: string;
   updatedAt: string;
 }

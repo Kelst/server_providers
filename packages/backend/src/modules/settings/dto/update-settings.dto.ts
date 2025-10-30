@@ -57,4 +57,16 @@ export class UpdateSettingsDto {
   @Min(1000)
   @Max(300000)
   databaseQueryTimeout?: number;
+
+  @ApiPropertyOptional({
+    description: 'Global rate limit in requests per minute (min: 1, max: 10000)',
+    example: 100,
+    minimum: 1,
+    maximum: 10000,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  globalRateLimit?: number;
 }

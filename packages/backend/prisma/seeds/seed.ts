@@ -24,7 +24,7 @@ async function main() {
 
   console.log('✅ Created admin user:', admin.email);
 
-  // Create default admin settings with timeout values
+  // Create default admin settings with timeout and rate limit values
   await prisma.adminSettings.upsert({
     where: { userId: admin.id },
     update: {},
@@ -34,10 +34,11 @@ async function main() {
       emailNotifications: false,
       apiRequestTimeout: 30000, // 30 seconds
       databaseQueryTimeout: 10000, // 10 seconds
+      globalRateLimit: 100, // 100 requests per minute
     },
   });
 
-  console.log('✅ Created admin settings with default timeout values');
+  console.log('✅ Created admin settings with default timeout and rate limit values');
 
   // Create sample API tokens with different scopes
   const token1 = 'demo_token_' + Math.random().toString(36).substring(2, 15);

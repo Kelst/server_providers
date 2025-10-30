@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 
 import { DatabaseModule } from './modules/database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -18,6 +17,7 @@ import { AlertsModule } from './modules/alerts/alerts.module';
 import { CommonModule } from './common/common.module';
 import { ApiLoggingInterceptor } from './interceptors/api-logging.interceptor';
 import { RequestTimeoutInterceptor } from './interceptors/request-timeout.interceptor';
+import { ConfigurableThrottlerGuard } from './guards/configurable-throttler.guard';
 
 import configuration from './config/configuration';
 import validationSchema from './config/validation.schema';
@@ -29,12 +29,6 @@ import validationSchema from './config/validation.schema';
       load: [configuration],
       validationSchema,
     }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000, // 1 minute
-        limit: 100, // 100 requests
-      },
-    ]),
     ScheduleModule.forRoot(),
     DatabaseModule,
     CommonModule,
@@ -57,6 +51,10 @@ import validationSchema from './config/validation.schema';
     {
       provide: APP_INTERCEPTOR,
       useClass: RequestTimeoutInterceptor,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ConfigurableThrottlerGuard,
     },
   ],
 })

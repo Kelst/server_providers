@@ -29,6 +29,9 @@ export default function SettingsPage() {
   const [testingTimeout, setTestingTimeout] = useState(false);
   const [timeoutTestResult, setTimeoutTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  // Rate limit settings
+  const [globalRateLimit, setGlobalRateLimit] = useState(100);
+
   useEffect(() => {
     fetchSettings();
   }, [fetchSettings]);
@@ -40,6 +43,7 @@ export default function SettingsPage() {
       setAlertsEnabled(settings.alertsEnabled);
       setApiRequestTimeout(settings.apiRequestTimeout / 1000); // Convert ms to seconds
       setDatabaseQueryTimeout(settings.databaseQueryTimeout / 1000); // Convert ms to seconds
+      setGlobalRateLimit(settings.globalRateLimit);
     }
   }, [settings]);
 
@@ -97,10 +101,11 @@ export default function SettingsPage() {
       await updateSettings({
         apiRequestTimeout: apiRequestTimeout * 1000, // Convert seconds to ms
         databaseQueryTimeout: databaseQueryTimeout * 1000, // Convert seconds to ms
+        globalRateLimit,
       });
       toast({
         title: 'Performance settings saved',
-        description: 'Timeout values have been updated successfully',
+        description: 'Timeout and rate limit values have been updated successfully',
       });
     } catch (error) {
       toast({
@@ -365,6 +370,22 @@ export default function SettingsPage() {
                   />
                   <p className="text-xs text-muted-foreground">
                     Maximum time to wait for database queries (1-300 seconds). Default: 10s
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="globalRateLimit">Global Rate Limit (requests per minute)</Label>
+                  <Input
+                    id="globalRateLimit"
+                    type="number"
+                    min="1"
+                    max="10000"
+                    value={globalRateLimit}
+                    onChange={(e) => setGlobalRateLimit(parseInt(e.target.value) || 100)}
+                    disabled={isLoading}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Maximum number of requests allowed per minute globally (1-10000). Default: 100
                   </p>
                 </div>
 
