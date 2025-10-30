@@ -23,6 +23,12 @@ export default function SettingsPage() {
   const [testingTelegram, setTestingTelegram] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  // Timeout settings
+  const [apiRequestTimeout, setApiRequestTimeout] = useState(30);
+  const [databaseQueryTimeout, setDatabaseQueryTimeout] = useState(10);
+  const [testingTimeout, setTestingTimeout] = useState(false);
+  const [timeoutTestResult, setTimeoutTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
   useEffect(() => {
     fetchSettings();
   }, [fetchSettings]);
@@ -32,6 +38,8 @@ export default function SettingsPage() {
       setTelegramBotToken(settings.telegramBotToken || '');
       setTelegramChatId(settings.telegramChatId || '');
       setAlertsEnabled(settings.alertsEnabled);
+      setApiRequestTimeout(settings.apiRequestTimeout / 1000); // Convert ms to seconds
+      setDatabaseQueryTimeout(settings.databaseQueryTimeout / 1000); // Convert ms to seconds
     }
   }, [settings]);
 
@@ -84,6 +92,59 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSavePerformance = async () => {
+    try {
+      await updateSettings({
+        apiRequestTimeout: apiRequestTimeout * 1000, // Convert seconds to ms
+        databaseQueryTimeout: databaseQueryTimeout * 1000, // Convert seconds to ms
+      });
+      toast({
+        title: 'Performance settings saved',
+        description: 'Timeout values have been updated successfully',
+      });
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to save performance settings',
+      });
+    }
+  };
+
+  const handleTestTimeout = async () => {
+    const { settingsApi } = await import('@/lib/api/settingsApi');
+    setTestingTimeout(true);
+    setTimeoutTestResult(null);
+    const testDelay = Math.min(apiRequestTimeout + 5, 60); // Test with delay slightly longer than timeout
+    try {
+      const result = await settingsApi.testTimeout(testDelay);
+      setTimeoutTestResult(result);
+      toast({
+        title: 'Test completed',
+        description: result.message,
+      });
+    } catch (error: any) {
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        setTimeoutTestResult({
+          success: false,
+          message: `Request timed out after ${apiRequestTimeout}s (expected, tested with ${testDelay}s delay)`,
+        });
+        toast({
+          title: 'Timeout test successful',
+          description: `Request correctly timed out after ${apiRequestTimeout}s`,
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Test failed',
+          description: 'Failed to test timeout',
+        });
+      }
+    } finally {
+      setTestingTimeout(false);
+    }
+  };
+
   if (isLoading && !settings) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -101,6 +162,7 @@ export default function SettingsPage() {
           <TabsList>
             <TabsTrigger value="telegram">Telegram</TabsTrigger>
             <TabsTrigger value="alerts">Alerts</TabsTrigger>
+            <TabsTrigger value="performance">Performance</TabsTrigger>
           </TabsList>
 
           {/* Telegram Tab */}
@@ -260,6 +322,96 @@ export default function SettingsPage() {
                     'Save Settings'
                   )}
                 </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Performance Tab */}
+          <TabsContent value="performance">
+            <Card>
+              <CardHeader>
+                <CardTitle>Performance & Timeout Settings</CardTitle>
+                <CardDescription>
+                  Configure request and database query timeouts
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="apiTimeout">API Request Timeout (seconds)</Label>
+                  <Input
+                    id="apiTimeout"
+                    type="number"
+                    min="1"
+                    max="300"
+                    value={apiRequestTimeout}
+                    onChange={(e) => setApiRequestTimeout(parseInt(e.target.value) || 30)}
+                    disabled={isLoading}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Maximum time to wait for API responses (1-300 seconds). Default: 30s
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="dbTimeout">Database Query Timeout (seconds)</Label>
+                  <Input
+                    id="dbTimeout"
+                    type="number"
+                    min="1"
+                    max="300"
+                    value={databaseQueryTimeout}
+                    onChange={(e) => setDatabaseQueryTimeout(parseInt(e.target.value) || 10)}
+                    disabled={isLoading}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Maximum time to wait for database queries (1-300 seconds). Default: 10s
+                  </p>
+                </div>
+
+                {timeoutTestResult && (
+                  <div
+                    className={`p-3 rounded-lg border ${
+                      timeoutTestResult.success
+                        ? 'bg-green-50 border-green-200'
+                        : 'bg-yellow-50 border-yellow-200'
+                    }`}
+                  >
+                    <p
+                      className={`text-sm ${
+                        timeoutTestResult.success ? 'text-green-600' : 'text-yellow-600'
+                      }`}
+                    >
+                      {timeoutTestResult.message}
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button onClick={handleSavePerformance} disabled={isLoading}>
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      'Save Settings'
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleTestTimeout}
+                    disabled={testingTimeout}
+                  >
+                    {testingTimeout ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Testing...
+                      </>
+                    ) : (
+                      'Test Timeout'
+                    )}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

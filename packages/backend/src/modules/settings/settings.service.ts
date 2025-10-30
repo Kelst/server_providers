@@ -180,4 +180,26 @@ export class SettingsService {
       return false;
     }
   }
+
+  /**
+   * Test timeout by delaying response
+   */
+  async testTimeout(delaySeconds: number): Promise<{
+    success: boolean;
+    message: string;
+    delaySeconds: number;
+    timestamp: string;
+  }> {
+    this.logger.log(`Testing timeout with ${delaySeconds}s delay...`);
+
+    // Wait for the specified delay
+    await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+
+    return {
+      success: true,
+      message: `Request completed successfully after ${delaySeconds}s delay`,
+      delaySeconds,
+      timestamp: new Date().toISOString(),
+    };
+  }
 }

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsInt, Min, Max } from 'class-validator';
 
 export class UpdateSettingsDto {
   @ApiPropertyOptional({
@@ -33,4 +33,28 @@ export class UpdateSettingsDto {
   @IsOptional()
   @IsBoolean()
   emailNotifications?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'API request timeout in milliseconds (min: 1000, max: 300000)',
+    example: 30000,
+    minimum: 1000,
+    maximum: 300000,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  @Max(300000)
+  apiRequestTimeout?: number;
+
+  @ApiPropertyOptional({
+    description: 'Database query timeout in milliseconds (min: 1000, max: 300000)',
+    example: 10000,
+    minimum: 1000,
+    maximum: 300000,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  @Max(300000)
+  databaseQueryTimeout?: number;
 }

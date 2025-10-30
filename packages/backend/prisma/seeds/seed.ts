@@ -24,6 +24,21 @@ async function main() {
 
   console.log('✅ Created admin user:', admin.email);
 
+  // Create default admin settings with timeout values
+  await prisma.adminSettings.upsert({
+    where: { userId: admin.id },
+    update: {},
+    create: {
+      userId: admin.id,
+      alertsEnabled: false,
+      emailNotifications: false,
+      apiRequestTimeout: 30000, // 30 seconds
+      databaseQueryTimeout: 10000, // 10 seconds
+    },
+  });
+
+  console.log('✅ Created admin settings with default timeout values');
+
   // Create sample API tokens with different scopes
   const token1 = 'demo_token_' + Math.random().toString(36).substring(2, 15);
   const tokenHash1 = await bcrypt.hash(token1, 10);

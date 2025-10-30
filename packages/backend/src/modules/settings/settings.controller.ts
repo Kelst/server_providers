@@ -6,6 +6,7 @@ import {
   Body,
   Request,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -77,5 +78,33 @@ export class SettingsController {
   })
   async testTelegram(@Request() req) {
     return this.settingsService.testTelegramConnection(req.user.id);
+  }
+
+  @Get('timeout/test')
+  @ApiOperation({
+    summary: 'Test request timeout',
+    description:
+      'Test endpoint that delays response by specified number of seconds. Useful for testing timeout configuration.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Test completed successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' },
+        delaySeconds: { type: 'number' },
+        timestamp: { type: 'string' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 408,
+    description: 'Request timeout - the delay exceeded configured timeout',
+  })
+  async testTimeout(@Query('delay') delay: string = '5') {
+    const delaySeconds = Math.min(Math.max(parseInt(delay, 10) || 5, 1), 60);
+    return this.settingsService.testTimeout(delaySeconds);
   }
 }

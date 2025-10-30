@@ -17,6 +17,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { CommonModule } from './common/common.module';
 import { ApiLoggingInterceptor } from './interceptors/api-logging.interceptor';
+import { RequestTimeoutInterceptor } from './interceptors/request-timeout.interceptor';
 
 import configuration from './config/configuration';
 import validationSchema from './config/validation.schema';
@@ -52,6 +53,10 @@ import validationSchema from './config/validation.schema';
     {
       provide: APP_INTERCEPTOR,
       useClass: ApiLoggingInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: RequestTimeoutInterceptor,
     },
   ],
 })

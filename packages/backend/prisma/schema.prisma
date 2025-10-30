@@ -399,6 +399,8 @@ model AdminSettings {
   telegramChatId      String?  @map("telegram_chat_id")
   alertsEnabled       Boolean  @default(false) @map("alerts_enabled")
   emailNotifications  Boolean  @default(false) @map("email_notifications")
+  apiRequestTimeout   Int      @default(30000) @map("api_request_timeout") // milliseconds
+  databaseQueryTimeout Int     @default(10000) @map("database_query_timeout") // milliseconds
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
