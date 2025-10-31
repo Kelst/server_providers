@@ -26,6 +26,9 @@ export default Joi.object({
   // Userside API Configuration
   USERSIDE_API_URL: Joi.string().required(),
   USERSIDE_API_KEY: Joi.string().required(),
+  USERSIDE_VLAN_KEY_OPENSVIT: Joi.string().default('134'),
+  USERSIDE_VLAN_KEY_VELES: Joi.string().default('135'),
+  USERSIDE_CACHE_TTL: Joi.number().default(30),
 
   // Telegram Bot API URLs
   TELEGRAM_API_OPTICOM: Joi.string().optional(),

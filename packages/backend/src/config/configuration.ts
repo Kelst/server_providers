@@ -30,6 +30,13 @@ export default () => ({
   userside: {
     apiUrl: process.env.USERSIDE_API_URL,
     apiKey: process.env.USERSIDE_API_KEY,
+    vlanMapping: {
+      opensvitKey: process.env.USERSIDE_VLAN_KEY_OPENSVIT || '134',
+      velesKey: process.env.USERSIDE_VLAN_KEY_VELES || '135',
+    },
+    cacheConfig: {
+      customerDataTtl: parseInt(process.env.USERSIDE_CACHE_TTL, 10) || 30, // seconds
+    },
   },
   notifications: {
     telegram: {
