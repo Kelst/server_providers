@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { CacheService } from '../../common/services/cache.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import axios from 'axios';
 
@@ -7,32 +8,46 @@ import axios from 'axios';
 export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cacheService: CacheService,
+  ) {}
 
   /**
-   * Get admin settings for a user
+   * Get admin settings for a user with caching
+   * Cache TTL: 5 minutes
    */
   async getSettings(userId: string) {
-    let settings = await this.prisma.adminSettings.findUnique({
-      where: { userId },
-    });
+    const cacheKey = `settings:admin:${userId}`;
 
-    // Create default settings if they don't exist
-    if (!settings) {
-      settings = await this.prisma.adminSettings.create({
-        data: {
-          userId,
-          alertsEnabled: false,
-          emailNotifications: false,
-        },
-      });
-    }
+    // Try cache first (remember pattern)
+    return this.cacheService.remember(
+      cacheKey,
+      300, // 5 minutes
+      async () => {
+        let settings = await this.prisma.adminSettings.findUnique({
+          where: { userId },
+        });
 
-    return settings;
+        // Create default settings if they don't exist
+        if (!settings) {
+          settings = await this.prisma.adminSettings.create({
+            data: {
+              userId,
+              alertsEnabled: false,
+              emailNotifications: false,
+            },
+          });
+          this.logger.debug(`Created default settings for user ${userId}`);
+        }
+
+        return settings;
+      },
+    );
   }
 
   /**
-   * Update admin settings
+   * Update admin settings and invalidate cache
    */
   async updateSettings(userId: string, dto: UpdateSettingsDto) {
     // Check if settings exist
@@ -40,21 +55,29 @@ export class SettingsService {
       where: { userId },
     });
 
+    let updatedSettings;
+
     if (existingSettings) {
       // Update existing settings
-      return this.prisma.adminSettings.update({
+      updatedSettings = await this.prisma.adminSettings.update({
         where: { userId },
         data: dto,
       });
     } else {
       // Create new settings
-      return this.prisma.adminSettings.create({
+      updatedSettings = await this.prisma.adminSettings.create({
         data: {
           userId,
           ...dto,
         },
       });
     }
+
+    // Invalidate cache for this user's settings
+    await this.cacheService.del(`settings:admin:${userId}`);
+    this.logger.debug(`Settings cache invalidated for user ${userId}`);
+
+    return updatedSettings;
   }
 
   /**

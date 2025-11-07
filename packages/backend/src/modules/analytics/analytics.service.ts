@@ -1,58 +1,75 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { CacheService } from '../../common/services/cache.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { AnalyticsPeriod } from './dto/endpoints-by-token.dto';
 
 @Injectable()
 export class AnalyticsService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(AnalyticsService.name);
 
+  constructor(
+    private prisma: PrismaService,
+    private cacheService: CacheService,
+  ) {}
+
+  /**
+   * Get dashboard statistics with caching
+   * Cache TTL: 1 minute (balance between freshness and performance)
+   */
   async getDashboardStats(userId: string) {
-    const tokens = await this.prisma.apiToken.findMany({
-      where: { createdBy: userId },
-      select: { id: true },
-    });
+    const cacheKey = `dashboard:stats:${userId}:24h`;
 
-    const tokenIds = tokens.map((t) => t.id);
+    return this.cacheService.remember(
+      cacheKey,
+      60, // 1 minute
+      async () => {
+        const tokens = await this.prisma.apiToken.findMany({
+          where: { createdBy: userId },
+          select: { id: true },
+        });
 
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const tokenIds = tokens.map((t) => t.id);
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    const [totalRequests, activeTokens, errorRequests, rateLimitEventsCount] = await Promise.all([
-      this.prisma.apiRequest.count({
-        where: {
-          tokenId: { in: tokenIds },
-          createdAt: { gte: twentyFourHoursAgo },
-        },
-      }),
-      this.prisma.apiToken.count({
-        where: {
-          createdBy: userId,
-          isActive: true,
-        },
-      }),
-      this.prisma.apiRequest.count({
-        where: {
-          tokenId: { in: tokenIds },
-          createdAt: { gte: twentyFourHoursAgo },
-          statusCode: { gte: 400 },
-        },
-      }),
-      this.prisma.rateLimitEvent.count({
-        where: {
-          tokenId: { in: tokenIds },
-          blockedAt: { gte: twentyFourHoursAgo },
-        },
-      }),
-    ]);
+        const [totalRequests, activeTokens, errorRequests, rateLimitEventsCount] = await Promise.all([
+          this.prisma.apiRequest.count({
+            where: {
+              tokenId: { in: tokenIds },
+              createdAt: { gte: twentyFourHoursAgo },
+            },
+          }),
+          this.prisma.apiToken.count({
+            where: {
+              createdBy: userId,
+              isActive: true,
+            },
+          }),
+          this.prisma.apiRequest.count({
+            where: {
+              tokenId: { in: tokenIds },
+              createdAt: { gte: twentyFourHoursAgo },
+              statusCode: { gte: 400 },
+            },
+          }),
+          this.prisma.rateLimitEvent.count({
+            where: {
+              tokenId: { in: tokenIds },
+              blockedAt: { gte: twentyFourHoursAgo },
+            },
+          }),
+        ]);
 
-    const errorRate = totalRequests > 0 ? errorRequests / totalRequests : 0;
+        const errorRate = totalRequests > 0 ? errorRequests / totalRequests : 0;
 
-    return {
-      totalRequests,
-      activeTokens,
-      errorRate,
-      rateLimitEvents: rateLimitEventsCount,
-    };
+        return {
+          totalRequests,
+          activeTokens,
+          errorRate,
+          rateLimitEvents: rateLimitEventsCount,
+        };
+      },
+    );
   }
 
   async getRequestsOverTime(

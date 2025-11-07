@@ -4,6 +4,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 
 import { DatabaseModule } from './modules/database/database.module';
+import { CacheModule } from './common/modules/cache.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { TokensModule } from './modules/tokens/tokens.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
@@ -32,6 +33,7 @@ import validationSchema from './config/validation.schema';
     }),
     ScheduleModule.forRoot(),
     DatabaseModule,
+    CacheModule, // Global cache service for Redis caching
     CommonModule,
     AuthModule,
     TokensModule,

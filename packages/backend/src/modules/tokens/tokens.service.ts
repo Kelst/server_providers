@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { CacheService } from '../../common/services/cache.service';
 import { CreateTokenDto } from './dto/create-token.dto';
 import { UpdateTokenDto } from './dto/update-token.dto';
 import { CreateIpRuleDto } from './dto/create-ip-rule.dto';
@@ -12,7 +13,10 @@ import { randomBytes } from 'crypto';
 export class TokensService {
   private readonly logger = new Logger(TokensService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cacheService: CacheService,
+  ) {}
 
   async create(createTokenDto: CreateTokenDto, userId: string, ipAddress?: string, userAgent?: string) {
     // Generate random token
@@ -136,6 +140,10 @@ export class TokensService {
       },
     });
 
+    // Invalidate token validation cache
+    await this.cacheService.del(`token:validation:${oldToken.token}`);
+    this.logger.debug(`Cache invalidated for updated token: ${id}`);
+
     // Calculate changes and log audit
     const changes = this.calculateChanges(oldToken, updatedToken);
 
@@ -168,6 +176,10 @@ export class TokensService {
     if (!token) {
       return null;
     }
+
+    // Invalidate token validation cache
+    await this.cacheService.del(`token:validation:${token.token}`);
+    this.logger.debug(`Cache invalidated for deleted token: ${id}`);
 
     // Log audit event BEFORE deletion (because we need tokenId reference)
     await this.logAudit(
@@ -314,6 +326,10 @@ export class TokensService {
     // Generate new token
     const newTokenValue = 'tk_' + randomBytes(32).toString('hex');
     const newTokenHash = await bcrypt.hash(newTokenValue, 10);
+
+    // Invalidate old token's cache
+    await this.cacheService.del(`token:validation:${oldToken.token}`);
+    this.logger.debug(`Cache invalidated for regenerated token: ${id}`);
 
     // Store old token hash in rotation history
     await this.prisma.tokenRotationHistory.create({
