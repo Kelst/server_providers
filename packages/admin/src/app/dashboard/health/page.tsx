@@ -7,6 +7,7 @@ import { useHealthStore } from '@/lib/stores/healthStore';
 import { Loader2, CheckCircle2, AlertCircle, XCircle, Activity, Database, Server } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CacheManagement } from '@/components/CacheManagement';
 
 export default function HealthPage() {
   const { health, isLoading, fetchHealth } = useHealthStore();
@@ -328,6 +329,12 @@ export default function HealthPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* Cache Management */}
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight mb-4">Cache Management</h2>
+          <CacheManagement />
+        </div>
       </div>
     </div>
   );

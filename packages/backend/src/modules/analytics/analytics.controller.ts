@@ -1,5 +1,5 @@
-import { Controller, Get, UseGuards, Request, Query, Param } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Post, UseGuards, Request, Query, Param, Body } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { AnalyticsService } from './analytics.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
@@ -169,5 +169,80 @@ export class AnalyticsController {
   getTrends(@Request() req, @Query('days') days?: string) {
     const daysNum = days ? parseInt(days, 10) : 7;
     return this.analyticsService.getTrends(req.user.id, daysNum);
+  }
+
+  @Get('cache/stats')
+  @ApiOperation({
+    summary: 'Get cache statistics',
+    description: 'Returns cache performance metrics including hits, misses, and hit rate'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cache statistics retrieved',
+    schema: {
+      example: {
+        hits: 1250,
+        misses: 180,
+        hitRate: 87.4,
+        totalRequests: 1430
+      }
+    }
+  })
+  getCacheStats() {
+    return this.analyticsService.getCacheStats();
+  }
+
+  @Post('cache/flush')
+  @ApiOperation({
+    summary: 'Flush all analytics cache',
+    description: 'Clears all cached analytics data. Use with caution as this will force all subsequent requests to hit the database until cache is rebuilt.'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cache flushed successfully',
+    schema: {
+      example: {
+        success: true,
+        message: 'Analytics cache flushed successfully',
+        patternsCleared: ['analytics:*']
+      }
+    }
+  })
+  flushCache() {
+    return this.analyticsService.flushAnalyticsCache();
+  }
+
+  @Post('cache/invalidate')
+  @ApiOperation({
+    summary: 'Invalidate specific cache patterns',
+    description: 'Invalidates cache entries matching the specified pattern. Supports wildcards (*).'
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        pattern: {
+          type: 'string',
+          description: 'Cache key pattern to invalidate (supports wildcards)',
+          example: 'analytics:dashboard:*'
+        }
+      },
+      required: ['pattern']
+    }
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cache invalidated successfully',
+    schema: {
+      example: {
+        success: true,
+        message: 'Cache pattern invalidated',
+        pattern: 'analytics:dashboard:*',
+        keysDeleted: 15
+      }
+    }
+  })
+  invalidateCache(@Body('pattern') pattern: string) {
+    return this.analyticsService.invalidateCachePattern(pattern);
   }
 }

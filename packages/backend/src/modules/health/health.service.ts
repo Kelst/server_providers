@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
+import { CacheService } from '../../common/services/cache.service';
 import Redis from 'ioredis';
 import * as si from 'systeminformation';
 import * as pidusage from 'pidusage';
@@ -99,6 +100,7 @@ export class HealthService {
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
+    private cacheService: CacheService,
   ) {
     // Initialize Redis client for health check
     const redisHost = this.configService.get<string>('redis.host');
@@ -172,12 +174,26 @@ export class HealthService {
 
     const overallStatus = this.getOverallStatus(services);
 
+    // Get cache statistics
+    const cacheStats = this.cacheService.getCacheStats();
+
     return {
       status: overallStatus,
       timestamp: new Date().toISOString(),
       services,
       system: system.status === 'fulfilled' ? system.value : null,
       application: application.status === 'fulfilled' ? application.value : null,
+      cache: {
+        hits: cacheStats.hits,
+        misses: cacheStats.misses,
+        errors: cacheStats.errors,
+        hitRate: cacheStats.hitRate,
+        totalRequests: cacheStats.total,
+        performance: {
+          status: parseFloat(cacheStats.hitRate) > 70 ? 'excellent' : parseFloat(cacheStats.hitRate) > 50 ? 'good' : 'poor',
+          recommendation: parseFloat(cacheStats.hitRate) < 50 ? 'Consider increasing cache TTL or pre-warming cache' : null,
+        },
+      },
     };
   }
 

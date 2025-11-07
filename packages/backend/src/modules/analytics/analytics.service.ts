@@ -72,80 +72,104 @@ export class AnalyticsService {
     );
   }
 
+  /**
+   * Get requests over time with caching
+   * Cache TTL: 5 minutes (balance between freshness and performance)
+   */
   async getRequestsOverTime(
     userId: string,
     days: number = 7,
     tokenId?: string,
   ) {
-    const tokens = await this.prisma.apiToken.findMany({
-      where: { createdBy: userId },
-      select: { id: true },
-    });
+    const cacheKey = `analytics:requests-time:${userId}:${days}d${tokenId ? `:${tokenId}` : ''}`;
 
-    const tokenIds = tokenId ? [tokenId] : tokens.map((t) => t.id);
+    return this.cacheService.remember(
+      cacheKey,
+      300, // 5 minutes
+      async () => {
+        const tokens = await this.prisma.apiToken.findMany({
+          where: { createdBy: userId },
+          select: { id: true },
+        });
 
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-    startDate.setHours(0, 0, 0, 0);
+        const tokenIds = tokenId ? [tokenId] : tokens.map((t) => t.id);
 
-    // Get all requests in the period
-    const requests = await this.prisma.apiRequest.findMany({
-      where: {
-        tokenId: { in: tokenIds },
-        createdAt: { gte: startDate },
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - days);
+        startDate.setHours(0, 0, 0, 0);
+
+        // Get all requests in the period
+        const requests = await this.prisma.apiRequest.findMany({
+          where: {
+            tokenId: { in: tokenIds },
+            createdAt: { gte: startDate },
+          },
+          select: {
+            createdAt: true,
+          },
+        });
+
+        // Group by date (not datetime)
+        const groupedByDate = requests.reduce((acc, req) => {
+          const dateStr = req.createdAt.toISOString().split('T')[0];
+          if (!acc[dateStr]) {
+            acc[dateStr] = 0;
+          }
+          acc[dateStr]++;
+          return acc;
+        }, {} as Record<string, number>);
+
+        // Convert to array format expected by frontend
+        return Object.entries(groupedByDate).map(([date, count]) => ({
+          date,
+          count,
+        })).sort((a, b) => a.date.localeCompare(b.date));
       },
-      select: {
-        createdAt: true,
-      },
-    });
-
-    // Group by date (not datetime)
-    const groupedByDate = requests.reduce((acc, req) => {
-      const dateStr = req.createdAt.toISOString().split('T')[0];
-      if (!acc[dateStr]) {
-        acc[dateStr] = 0;
-      }
-      acc[dateStr]++;
-      return acc;
-    }, {} as Record<string, number>);
-
-    // Convert to array format expected by frontend
-    return Object.entries(groupedByDate).map(([date, count]) => ({
-      date,
-      count,
-    })).sort((a, b) => a.date.localeCompare(b.date));
+    );
   }
 
+  /**
+   * Get top endpoints with caching
+   * Cache TTL: 2 minutes (frequent aggregation query)
+   */
   async getTopEndpoints(userId: string, limit: number = 10) {
-    const tokens = await this.prisma.apiToken.findMany({
-      where: { createdBy: userId },
-      select: { id: true },
-    });
+    const cacheKey = `analytics:top-endpoints:${userId}:${limit}`;
 
-    const tokenIds = tokens.map((t) => t.id);
+    return this.cacheService.remember(
+      cacheKey,
+      120, // 2 minutes
+      async () => {
+        const tokens = await this.prisma.apiToken.findMany({
+          where: { createdBy: userId },
+          select: { id: true },
+        });
 
-    // Get endpoint stats with method and avgResponseTime
-    const endpoints = await this.prisma.apiRequest.groupBy({
-      by: ['endpoint', 'method'],
-      where: { tokenId: { in: tokenIds } },
-      _count: true,
-      _avg: {
-        responseTime: true,
+        const tokenIds = tokens.map((t) => t.id);
+
+        // Get endpoint stats with method and avgResponseTime
+        const endpoints = await this.prisma.apiRequest.groupBy({
+          by: ['endpoint', 'method'],
+          where: { tokenId: { in: tokenIds } },
+          _count: true,
+          _avg: {
+            responseTime: true,
+          },
+          orderBy: {
+            _count: {
+              endpoint: 'desc',
+            },
+          },
+          take: limit,
+        });
+
+        return endpoints.map(ep => ({
+          endpoint: ep.endpoint,
+          method: ep.method,
+          count: ep._count,
+          avgResponseTime: Math.round(ep._avg.responseTime || 0),
+        }));
       },
-      orderBy: {
-        _count: {
-          endpoint: 'desc',
-        },
-      },
-      take: limit,
-    });
-
-    return endpoints.map(ep => ({
-      endpoint: ep.endpoint,
-      method: ep.method,
-      count: ep._count,
-      avgResponseTime: Math.round(ep._avg.responseTime || 0),
-    }));
+    );
   }
 
   async getErrorStats(userId: string) {
@@ -560,223 +584,233 @@ export class AnalyticsService {
 
   /**
    * Get real-time metrics (last 5 minutes with auto-refresh capability)
+   * Cache TTL: 10 seconds
    */
   async getRealtimeMetrics(userId: string | null) {
-    // Build token filter based on userId
-    const tokenFilter = userId ? { createdBy: userId } : {};
+    const cacheKey = `analytics:realtime:${userId || 'all'}`;
 
-    const tokens = await this.prisma.apiToken.findMany({
-      where: tokenFilter,
-      select: { id: true, projectName: true, isActive: true },
-    });
+    return this.cacheService.remember(cacheKey, 10, async () => {
+      // Build token filter based on userId
+      const tokenFilter = userId ? { createdBy: userId } : {};
 
-    const tokenIds = tokens.map((t) => t.id);
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      const tokens = await this.prisma.apiToken.findMany({
+        where: tokenFilter,
+        select: { id: true, projectName: true, isActive: true },
+      });
 
-    // If no tokens found, return empty metrics
-    if (tokenIds.length === 0) {
+      const tokenIds = tokens.map((t) => t.id);
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+      // If no tokens found, return empty metrics
+      if (tokenIds.length === 0) {
+        return {
+          summary: {
+            requestsPerSecond: 0,
+            errorsPerSecond: 0,
+            avgResponseTime: 0,
+            totalRequests: 0,
+            totalErrors: 0,
+            activeTokens: 0,
+          },
+          timeline: [],
+          activeTokens: [],
+          lastUpdated: new Date().toISOString(),
+        };
+      }
+
+      const [recentRequests, recentErrors, activeRequests] = await Promise.all([
+        // Requests in last 5 minutes
+        this.prisma.apiRequest.findMany({
+          where: {
+            tokenId: { in: tokenIds },
+            createdAt: { gte: fiveMinutesAgo },
+          },
+          select: {
+            createdAt: true,
+            statusCode: true,
+            responseTime: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+
+        // Errors in last 5 minutes
+        this.prisma.apiRequest.count({
+          where: {
+            tokenId: { in: tokenIds },
+            createdAt: { gte: fiveMinutesAgo },
+            statusCode: { gte: 400 },
+          },
+        }),
+
+        // Current active tokens with recent activity
+        this.prisma.apiToken.findMany({
+          where: {
+            ...(userId ? { createdBy: userId } : {}),
+            isActive: true,
+            requests: {
+              some: {
+                createdAt: { gte: fiveMinutesAgo },
+              },
+            },
+          },
+          select: {
+            id: true,
+            projectName: true,
+            _count: {
+              select: {
+                requests: true,
+              },
+            },
+          },
+        }),
+      ]);
+
+      // Calculate requests per second
+      const requestsPerSecond = recentRequests.length / 300; // 300 seconds = 5 minutes
+
+      // Calculate errors per second
+      const errorsPerSecond = recentErrors / 300;
+
+      // Calculate average response time
+      const avgResponseTime = recentRequests.length > 0
+        ? recentRequests.reduce((sum, r) => sum + r.responseTime, 0) / recentRequests.length
+        : 0;
+
+      // Group requests by minute for chart
+      const requestsByMinute = recentRequests.reduce((acc, req) => {
+        const minute = new Date(req.createdAt);
+        minute.setSeconds(0, 0);
+        const key = minute.toISOString();
+
+        if (!acc[key]) {
+          acc[key] = { timestamp: key, count: 0, errors: 0 };
+        }
+        acc[key].count++;
+        if (req.statusCode >= 400) {
+          acc[key].errors++;
+        }
+        return acc;
+      }, {} as Record<string, { timestamp: string; count: number; errors: number }>);
+
+      const timeline = Object.values(requestsByMinute).sort((a, b) =>
+        a.timestamp.localeCompare(b.timestamp)
+      );
+
       return {
         summary: {
-          requestsPerSecond: 0,
-          errorsPerSecond: 0,
-          avgResponseTime: 0,
-          totalRequests: 0,
-          totalErrors: 0,
-          activeTokens: 0,
+          requestsPerSecond: Math.round(requestsPerSecond * 100) / 100,
+          errorsPerSecond: Math.round(errorsPerSecond * 100) / 100,
+          avgResponseTime: Math.round(avgResponseTime),
+          totalRequests: recentRequests.length,
+          totalErrors: recentErrors,
+          activeTokens: activeRequests.length,
         },
-        timeline: [],
-        activeTokens: [],
+        timeline,
+        activeTokens: activeRequests,
         lastUpdated: new Date().toISOString(),
       };
-    }
-
-    const [recentRequests, recentErrors, activeRequests] = await Promise.all([
-      // Requests in last 5 minutes
-      this.prisma.apiRequest.findMany({
-        where: {
-          tokenId: { in: tokenIds },
-          createdAt: { gte: fiveMinutesAgo },
-        },
-        select: {
-          createdAt: true,
-          statusCode: true,
-          responseTime: true,
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
-
-      // Errors in last 5 minutes
-      this.prisma.apiRequest.count({
-        where: {
-          tokenId: { in: tokenIds },
-          createdAt: { gte: fiveMinutesAgo },
-          statusCode: { gte: 400 },
-        },
-      }),
-
-      // Current active tokens with recent activity
-      this.prisma.apiToken.findMany({
-        where: {
-          ...(userId ? { createdBy: userId } : {}),
-          isActive: true,
-          requests: {
-            some: {
-              createdAt: { gte: fiveMinutesAgo },
-            },
-          },
-        },
-        select: {
-          id: true,
-          projectName: true,
-          _count: {
-            select: {
-              requests: true,
-            },
-          },
-        },
-      }),
-    ]);
-
-    // Calculate requests per second
-    const requestsPerSecond = recentRequests.length / 300; // 300 seconds = 5 minutes
-
-    // Calculate errors per second
-    const errorsPerSecond = recentErrors / 300;
-
-    // Calculate average response time
-    const avgResponseTime = recentRequests.length > 0
-      ? recentRequests.reduce((sum, r) => sum + r.responseTime, 0) / recentRequests.length
-      : 0;
-
-    // Group requests by minute for chart
-    const requestsByMinute = recentRequests.reduce((acc, req) => {
-      const minute = new Date(req.createdAt);
-      minute.setSeconds(0, 0);
-      const key = minute.toISOString();
-
-      if (!acc[key]) {
-        acc[key] = { timestamp: key, count: 0, errors: 0 };
-      }
-      acc[key].count++;
-      if (req.statusCode >= 400) {
-        acc[key].errors++;
-      }
-      return acc;
-    }, {} as Record<string, { timestamp: string; count: number; errors: number }>);
-
-    const timeline = Object.values(requestsByMinute).sort((a, b) =>
-      a.timestamp.localeCompare(b.timestamp)
-    );
-
-    return {
-      summary: {
-        requestsPerSecond: Math.round(requestsPerSecond * 100) / 100,
-        errorsPerSecond: Math.round(errorsPerSecond * 100) / 100,
-        avgResponseTime: Math.round(avgResponseTime),
-        totalRequests: recentRequests.length,
-        totalErrors: recentErrors,
-        activeTokens: activeRequests.length,
-      },
-      timeline,
-      activeTokens: activeRequests,
-      lastUpdated: new Date().toISOString(),
-    };
+    });
   }
 
   /**
    * Get performance metrics (P95, P99, latency distribution)
+   * Cache TTL: 1 hour
    */
   async getPerformanceMetrics(userId: string, days: number = 7) {
-    const tokens = await this.prisma.apiToken.findMany({
-      where: { createdBy: userId },
-      select: { id: true },
-    });
+    const cacheKey = `analytics:performance:${userId}:${days}d`;
 
-    const tokenIds = tokens.map((t) => t.id);
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+    return this.cacheService.remember(cacheKey, 3600, async () => {
+      const tokens = await this.prisma.apiToken.findMany({
+        where: { createdBy: userId },
+        select: { id: true },
+      });
 
-    // Get all response times for the period
-    const requests = await this.prisma.apiRequest.findMany({
-      where: {
-        tokenId: { in: tokenIds },
-        createdAt: { gte: startDate },
-      },
-      select: {
-        responseTime: true,
-        endpoint: true,
-        statusCode: true,
-      },
-    });
+      const tokenIds = tokens.map((t) => t.id);
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
 
-    if (requests.length === 0) {
-      return {
-        p50: 0,
-        p95: 0,
-        p99: 0,
-        min: 0,
-        max: 0,
-        avg: 0,
-        distribution: [],
-        slowestEndpoints: [],
-      };
-    }
+      // Get all response times for the period
+      const requests = await this.prisma.apiRequest.findMany({
+        where: {
+          tokenId: { in: tokenIds },
+          createdAt: { gte: startDate },
+        },
+        select: {
+          responseTime: true,
+          endpoint: true,
+          statusCode: true,
+        },
+      });
 
-    // Calculate percentiles
-    const sortedTimes = requests.map(r => r.responseTime).sort((a, b) => a - b);
-
-    const p50Index = Math.floor(sortedTimes.length * 0.50);
-    const p95Index = Math.floor(sortedTimes.length * 0.95);
-    const p99Index = Math.floor(sortedTimes.length * 0.99);
-
-    const p50 = sortedTimes[p50Index];
-    const p95 = sortedTimes[p95Index];
-    const p99 = sortedTimes[p99Index];
-    const min = sortedTimes[0];
-    const max = sortedTimes[sortedTimes.length - 1];
-    const avg = sortedTimes.reduce((a, b) => a + b, 0) / sortedTimes.length;
-
-    // Create latency distribution buckets
-    const buckets = [0, 50, 100, 200, 500, 1000, 2000, 5000];
-    const distribution = buckets.map((bucket, i) => {
-      const nextBucket = buckets[i + 1] || Infinity;
-      const count = sortedTimes.filter(t => t >= bucket && t < nextBucket).length;
-      return {
-        range: nextBucket === Infinity ? `${bucket}+ms` : `${bucket}-${nextBucket}ms`,
-        count,
-        percentage: Math.round((count / sortedTimes.length) * 100),
-      };
-    });
-
-    // Find slowest endpoints
-    const endpointStats = requests.reduce((acc, req) => {
-      if (!acc[req.endpoint]) {
-        acc[req.endpoint] = { times: [], count: 0 };
+      if (requests.length === 0) {
+        return {
+          p50: 0,
+          p95: 0,
+          p99: 0,
+          min: 0,
+          max: 0,
+          avg: 0,
+          distribution: [],
+          slowestEndpoints: [],
+        };
       }
-      acc[req.endpoint].times.push(req.responseTime);
-      acc[req.endpoint].count++;
-      return acc;
-    }, {} as Record<string, { times: number[]; count: number }>);
 
-    const slowestEndpoints = Object.entries(endpointStats)
-      .map(([endpoint, data]) => ({
-        endpoint,
-        avgResponseTime: Math.round(data.times.reduce((a, b) => a + b, 0) / data.times.length),
-        requestCount: data.count,
-      }))
-      .sort((a, b) => b.avgResponseTime - a.avgResponseTime)
-      .slice(0, 10);
+      // Calculate percentiles
+      const sortedTimes = requests.map(r => r.responseTime).sort((a, b) => a - b);
 
-    return {
-      p50: Math.round(p50),
-      p95: Math.round(p95),
-      p99: Math.round(p99),
-      min: Math.round(min),
-      max: Math.round(max),
-      avg: Math.round(avg),
-      distribution,
-      slowestEndpoints,
-    };
+      const p50Index = Math.floor(sortedTimes.length * 0.50);
+      const p95Index = Math.floor(sortedTimes.length * 0.95);
+      const p99Index = Math.floor(sortedTimes.length * 0.99);
+
+      const p50 = sortedTimes[p50Index];
+      const p95 = sortedTimes[p95Index];
+      const p99 = sortedTimes[p99Index];
+      const min = sortedTimes[0];
+      const max = sortedTimes[sortedTimes.length - 1];
+      const avg = sortedTimes.reduce((a, b) => a + b, 0) / sortedTimes.length;
+
+      // Create latency distribution buckets
+      const buckets = [0, 50, 100, 200, 500, 1000, 2000, 5000];
+      const distribution = buckets.map((bucket, i) => {
+        const nextBucket = buckets[i + 1] || Infinity;
+        const count = sortedTimes.filter(t => t >= bucket && t < nextBucket).length;
+        return {
+          range: nextBucket === Infinity ? `${bucket}+ms` : `${bucket}-${nextBucket}ms`,
+          count,
+          percentage: Math.round((count / sortedTimes.length) * 100),
+        };
+      });
+
+      // Find slowest endpoints
+      const endpointStats = requests.reduce((acc, req) => {
+        if (!acc[req.endpoint]) {
+          acc[req.endpoint] = { times: [], count: 0 };
+        }
+        acc[req.endpoint].times.push(req.responseTime);
+        acc[req.endpoint].count++;
+        return acc;
+      }, {} as Record<string, { times: number[]; count: number }>);
+
+      const slowestEndpoints = Object.entries(endpointStats)
+        .map(([endpoint, data]) => ({
+          endpoint,
+          avgResponseTime: Math.round(data.times.reduce((a, b) => a + b, 0) / data.times.length),
+          requestCount: data.count,
+        }))
+        .sort((a, b) => b.avgResponseTime - a.avgResponseTime)
+        .slice(0, 10);
+
+      return {
+        p50: Math.round(p50),
+        p95: Math.round(p95),
+        p99: Math.round(p99),
+        min: Math.round(min),
+        max: Math.round(max),
+        avg: Math.round(avg),
+        distribution,
+        slowestEndpoints,
+      };
+    });
   }
 
   /**
@@ -1115,6 +1149,65 @@ export class AnalyticsService {
     return {
       period,
       tokens: filteredTokens,
+    };
+  }
+
+  /**
+   * Get cache statistics
+   * Returns cache performance metrics for monitoring
+   */
+  getCacheStats() {
+    const stats = this.cacheService.getCacheStats();
+
+    return {
+      hits: stats.hits,
+      misses: stats.misses,
+      errors: stats.errors,
+      hitRate: parseFloat(stats.hitRate),
+      totalRequests: stats.total,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Flush all analytics cache
+   * Clears all cached analytics data (analytics:* pattern)
+   */
+  async flushAnalyticsCache() {
+    const keysDeleted = await this.cacheService.invalidatePattern('analytics:*');
+
+    this.logger.log(`Flushed analytics cache: ${keysDeleted} keys deleted`);
+
+    return {
+      success: true,
+      message: 'Analytics cache flushed successfully',
+      patternsCleared: ['analytics:*'],
+      keysDeleted,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Invalidate specific cache pattern
+   * Clears cache entries matching the specified pattern
+   * @param pattern Cache key pattern (supports wildcards)
+   */
+  async invalidateCachePattern(pattern: string) {
+    // Validate pattern to prevent accidental deletion of all cache
+    if (!pattern || pattern.trim() === '' || pattern === '*') {
+      throw new Error('Invalid pattern: pattern cannot be empty or "*". Use a more specific pattern.');
+    }
+
+    const keysDeleted = await this.cacheService.invalidatePattern(pattern);
+
+    this.logger.log(`Invalidated cache pattern "${pattern}": ${keysDeleted} keys deleted`);
+
+    return {
+      success: true,
+      message: 'Cache pattern invalidated',
+      pattern,
+      keysDeleted,
+      timestamp: new Date().toISOString(),
     };
   }
 }

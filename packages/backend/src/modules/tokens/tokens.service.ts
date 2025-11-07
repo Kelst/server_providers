@@ -61,6 +61,10 @@ export class TokensService {
       userAgent,
     );
 
+    // Invalidate dashboard stats cache (new token affects dashboard metrics)
+    await this.cacheService.del(`analytics:dashboard:${userId}`);
+    this.logger.debug(`Invalidated dashboard cache for user ${userId} after token creation`);
+
     // Return token only on creation (won't be retrievable later)
     return {
       ...apiToken,

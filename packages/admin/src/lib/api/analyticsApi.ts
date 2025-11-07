@@ -9,6 +9,11 @@ import type {
   AuditLogResponse,
   EndpointsByToken,
 } from '../types';
+import type {
+  CacheStats,
+  FlushCacheResponse,
+  InvalidateCacheResponse,
+} from '../../types/cache';
 
 export const analyticsApi = {
   async getDashboard(): Promise<DashboardStats> {
@@ -100,6 +105,25 @@ export const analyticsApi = {
 
   async getTrends(days: number = 7): Promise<any> {
     const { data } = await apiClient.get(`/analytics/trends?days=${days}`);
+    return data;
+  },
+
+  // Cache Management
+  async getCacheStats(): Promise<CacheStats> {
+    const { data } = await apiClient.get<CacheStats>('/analytics/cache/stats');
+    return data;
+  },
+
+  async flushCache(): Promise<FlushCacheResponse> {
+    const { data } = await apiClient.post<FlushCacheResponse>('/analytics/cache/flush');
+    return data;
+  },
+
+  async invalidateCachePattern(pattern: string): Promise<InvalidateCacheResponse> {
+    const { data } = await apiClient.post<InvalidateCacheResponse>(
+      '/analytics/cache/invalidate',
+      { pattern }
+    );
     return data;
   },
 };

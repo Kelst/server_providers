@@ -8,20 +8,18 @@ import {
 } from '@nestjs/common';
 import { Observable, throwError, TimeoutError } from 'rxjs';
 import { catchError, timeout } from 'rxjs/operators';
-import { PrismaService } from '../modules/database/prisma.service';
+import { CacheService } from '../common/services/cache.service';
 
 /**
  * Interceptor that applies configurable request timeout to all API endpoints.
- * Timeout value is read from AdminSettings and cached for 30 seconds.
+ * Timeout value is read from AdminSettings and cached in Redis (TTL: 30 seconds).
  */
 @Injectable()
 export class RequestTimeoutInterceptor implements NestInterceptor {
   private readonly logger = new Logger(RequestTimeoutInterceptor.name);
-  private cachedTimeout: number = 30000; // Default 30 seconds
-  private lastCacheUpdate: number = 0;
-  private readonly CACHE_TTL = 30000; // Cache for 30 seconds
+  private readonly DEFAULT_TIMEOUT = 30000; // Default 30 seconds
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private cacheService: CacheService) {}
 
   async intercept(
     context: ExecutionContext,
@@ -52,46 +50,41 @@ export class RequestTimeoutInterceptor implements NestInterceptor {
   }
 
   /**
-   * Get timeout value from AdminSettings with caching
+   * Get timeout value from AdminSettings with Redis caching (TTL: 30s)
+   * Uses cached settings from SettingsService when available
    */
   private async getTimeout(request: any): Promise<number> {
-    const now = Date.now();
-
-    // Return cached value if cache is still valid
-    if (now - this.lastCacheUpdate < this.CACHE_TTL) {
-      return this.cachedTimeout;
-    }
-
     try {
       // Try to get user from JWT auth (admin requests)
       const user = request.user;
 
       if (user && user.id) {
-        const settings = await this.prisma.adminSettings.findUnique({
-          where: { userId: user.id },
-          select: { apiRequestTimeout: true },
-        });
+        // Try to get timeout from cached admin settings
+        const cacheKey = `settings:admin:${user.id}`;
+        const settings = await this.cacheService.get<any>(cacheKey);
 
         if (settings && settings.apiRequestTimeout) {
-          this.cachedTimeout = settings.apiRequestTimeout;
-          this.lastCacheUpdate = now;
-          return this.cachedTimeout;
+          this.logger.debug(
+            `Using cached timeout for user ${user.id}: ${settings.apiRequestTimeout}ms`,
+          );
+          return settings.apiRequestTimeout;
         }
       }
 
-      // If no user or settings found, try to get first available settings
-      const anySettings = await this.prisma.adminSettings.findFirst({
-        select: { apiRequestTimeout: true },
-      });
+      // Fallback: get global timeout setting
+      const globalCacheKey = 'settings:global:timeout';
+      const globalTimeout = await this.cacheService.get<number>(globalCacheKey);
 
-      if (anySettings && anySettings.apiRequestTimeout) {
-        this.cachedTimeout = anySettings.apiRequestTimeout;
-        this.lastCacheUpdate = now;
+      if (globalTimeout) {
+        return globalTimeout;
       }
-    } catch (error) {
-      this.logger.error('Failed to fetch timeout settings:', error);
-    }
 
-    return this.cachedTimeout;
+      // Return default timeout if no cached value found
+      this.logger.debug(`Using default timeout: ${this.DEFAULT_TIMEOUT}ms`);
+      return this.DEFAULT_TIMEOUT;
+    } catch (error) {
+      this.logger.error('Failed to fetch timeout from cache:', error);
+      return this.DEFAULT_TIMEOUT;
+    }
   }
 }
