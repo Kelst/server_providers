@@ -38,6 +38,12 @@ export default () => ({
       customerDataTtl: parseInt(process.env.USERSIDE_CACHE_TTL, 10) || 30, // seconds
     },
   },
+  equipment: {
+    snmp: {
+      timeout: parseInt(process.env.SNMP_TIMEOUT, 10) || 5000, // milliseconds
+      retries: parseInt(process.env.SNMP_RETRIES, 10) || 3, // number of retries
+    },
+  },
   notifications: {
     telegram: {
       opticom: process.env.TELEGRAM_API_OPTICOM,
