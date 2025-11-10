@@ -7,12 +7,8 @@ import { RequireScopes } from '../../common/decorators/require-scopes.decorator'
 import { ApiScope } from '../../common/constants/scopes.constants';
 import {
   SnmpQueryDto,
-  BdcomDeviceQueryDto,
   SnmpResponseDto,
-  BdcomSystemInfoDto,
   EquipmentResponseDto,
-  OnuQueryDto,
-  OnuStatusDto,
 } from './dto';
 
 /**
@@ -68,86 +64,4 @@ export class EquipmentController {
       };
     }
   }
-
-  /**
-   * Get BDCOM OLT system information
-   */
-  @Post('bdcom/system-info')
-  @ApiOperation({
-    summary: 'Get BDCOM OLT system information',
-    description:
-      'Retrieve system information from BDCOM OLT including description, uptime, location, etc.',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'System information retrieved successfully',
-    type: EquipmentResponseDto,
-  })
-  async getBdcomSystemInfo(
-    @Body() queryDto: BdcomDeviceQueryDto,
-  ): Promise<EquipmentResponseDto<BdcomSystemInfoDto>> {
-    try {
-      const data = await this.equipmentService.getBdcomSystemInfo(queryDto.host);
-
-      return {
-        success: true,
-        data,
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null as any,
-        timestamp: new Date().toISOString(),
-        error: error.message,
-      };
-    }
-  }
-
-  /**
-   * Get BDCOM ONU status and optical power
-   */
-  @Post('bdcom/onu-status')
-  @ApiOperation({
-    summary: 'Get BDCOM ONU status and optical power',
-    description:
-      'Retrieve ONU status, RX/TX optical power, and details for a specific ONU on BDCOM OLT',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'ONU status retrieved successfully',
-    type: EquipmentResponseDto,
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'ONU not found - device may be offline or port is invalid',
-  })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: 'Invalid port format - expected format: EPON0/8:15',
-  })
-  async getBdcomOnuStatus(
-    @Body() queryDto: OnuQueryDto,
-  ): Promise<EquipmentResponseDto<OnuStatusDto>> {
-    try {
-      const data = await this.equipmentService.getBdcomOnuStatus(
-        queryDto.host,
-        queryDto.port,
-      );
-
-      return {
-        success: true,
-        data,
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null as any,
-        timestamp: new Date().toISOString(),
-        error: error.message,
-      };
-    }
-  }
-
 }

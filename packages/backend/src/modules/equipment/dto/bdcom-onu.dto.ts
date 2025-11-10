@@ -32,29 +32,36 @@ export class OnuStatusDto {
   port: string;
 
   @ApiProperty({
-    description: 'ONU status',
+    description: 'ONU operational status',
     example: 'online',
     enum: ['online', 'offline', 'unknown'],
   })
   status: 'online' | 'offline' | 'unknown';
 
   @ApiProperty({
-    description: 'ONU RX optical power in dBm',
+    description: 'Administrative status',
+    example: 'up',
+    enum: ['up', 'down'],
+  })
+  adminStatus: 'up' | 'down';
+
+  @ApiProperty({
+    description: 'ONU RX optical power in dBm (requires BDCOM enterprise MIB)',
     example: -23.45,
     nullable: true,
   })
   rxPower: number | null;
 
   @ApiProperty({
-    description: 'ONU TX optical power in dBm',
+    description: 'ONU TX optical power in dBm (requires BDCOM enterprise MIB)',
     example: 2.67,
     nullable: true,
   })
   txPower: number | null;
 
   @ApiProperty({
-    description: 'ONU description/model',
-    example: 'BDCOM ONU',
+    description: 'Interface description',
+    example: 'EPON0/8:15',
     nullable: true,
   })
   description: string | null;
@@ -65,6 +72,35 @@ export class OnuStatusDto {
     nullable: true,
   })
   macAddress: string | null;
+
+  @ApiProperty({
+    description: 'Interface speed in bps',
+    example: 1000000000,
+  })
+  speed: number;
+
+  @ApiProperty({
+    description: 'Interface MTU',
+    example: 1900,
+  })
+  mtu: number;
+
+  @ApiProperty({
+    description: 'Traffic statistics',
+    type: 'object',
+    properties: {
+      rxBytes: { type: 'number', example: 3214435819 },
+      txBytes: { type: 'number', example: 486817324 },
+      rxErrors: { type: 'number', example: 0 },
+      txErrors: { type: 'number', example: 0 },
+    },
+  })
+  traffic: {
+    rxBytes: number;
+    txBytes: number;
+    rxErrors: number;
+    txErrors: number;
+  };
 
   @ApiProperty({
     description: 'SNMP ifIndex used for query',
