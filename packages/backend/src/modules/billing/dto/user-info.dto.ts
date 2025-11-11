@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { SessionHistoryItemDto } from './session-history.dto';
 
 /**
  * Basic User Information DTO
@@ -85,6 +86,32 @@ export class SessionInfoDto {
 
   @ApiProperty({ description: 'Internet connection active', example: true })
   statusInternet: boolean;
+
+  @ApiProperty({
+    description: 'NAS name from nas table',
+    example: 'Juniper_BRAS1',
+    required: false,
+    nullable: true
+  })
+  nasName: string | null;
+
+  @ApiProperty({
+    description: 'Session type (ipoe or pppoe)',
+    example: 'ipoe',
+    required: false,
+    nullable: true,
+    enum: ['ipoe', 'pppoe']
+  })
+  sessionType: string | null;
+
+  @ApiProperty({
+    description: 'Session provider/company',
+    example: 'intelekt',
+    required: false,
+    nullable: true,
+    enum: ['intelekt', 'opensvit', 'veles']
+  })
+  sessionProvider: string | null;
 }
 
 /**
@@ -235,6 +262,38 @@ export class FullUserDataDto {
 
   @ApiProperty({ description: 'Internet connection active', example: true })
   statusInternet: boolean;
+
+  @ApiProperty({
+    description: 'NAS name from nas table',
+    example: 'Juniper_BRAS1',
+    required: false,
+    nullable: true
+  })
+  nasName: string | null;
+
+  @ApiProperty({
+    description: 'Session type (ipoe or pppoe)',
+    example: 'ipoe',
+    required: false,
+    nullable: true
+  })
+  sessionType: string | null;
+
+  @ApiProperty({
+    description: 'Session provider/company',
+    example: 'intelekt',
+    required: false,
+    nullable: true
+  })
+  sessionProvider: string | null;
+
+  @ApiProperty({
+    description: 'Last closed session from history (previous session)',
+    type: SessionHistoryItemDto,
+    required: false,
+    nullable: true
+  })
+  lastSession: SessionHistoryItemDto | null;
 
   // Tariff Info
   @ApiProperty({ description: 'Tariff name', example: 'Максимальний 100' })

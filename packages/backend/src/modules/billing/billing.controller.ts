@@ -179,7 +179,7 @@ export class BillingController {
   @ApiOperation({
     summary: 'Get session history',
     description:
-      'Returns user session history from internet_log table: start time, tariff, duration, traffic sent/received, CID, guest IP. Returns up to 1000 most recent sessions ordered by start date (descending).',
+      'Returns user session history from internet_log table: start time, tariff, duration, traffic sent/received, CID, guest IP, NAS name, session type, and provider. Returns up to 1000 most recent sessions ordered by start date (descending).',
   })
   @ApiParam({ name: 'uid', description: 'User ID', example: 140278 })
   @ApiResponse({

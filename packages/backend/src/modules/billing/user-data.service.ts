@@ -20,6 +20,7 @@ import { intToIp } from './helpers/ip.helper';
 import { convertDataToMB, formatTime, getDifference } from './helpers/data.helper';
 import { processPhoneNumber, getLowestPriorityValue } from './helpers/phone.helper';
 import { checkUserAccess, getGroupIdFromAccess } from './helpers/access.helper';
+import { getNasInfo } from './helpers/nas.helper';
 
 /**
  * User Data Service
@@ -169,11 +170,20 @@ export class UserDataService {
   async getSessionInfo(uid: number): Promise<SessionInfoDto> {
     try {
       const sql = `
-        SELECT framed_ip_address, started, acct_session_time,
-               acct_input_octets, cid, acct_output_octets,
-               acct_input_gigawords, acct_output_gigawords
-        FROM internet_online
-        WHERE uid = ?
+        SELECT
+          io.framed_ip_address,
+          io.started,
+          io.acct_session_time,
+          io.acct_input_octets,
+          io.cid,
+          io.acct_output_octets,
+          io.acct_input_gigawords,
+          io.acct_output_gigawords,
+          io.nas_id,
+          n.name AS nas_name
+        FROM internet_online io
+        LEFT JOIN nas n ON io.nas_id = n.id
+        WHERE io.uid = ?
       `;
       const data = await this.mysqlService.query<any[]>(sql, [uid]);
 
@@ -183,8 +193,11 @@ export class UserDataService {
           duration: '0',
           sendData: 0,
           getData: 0,
-          cid:'',
+          cid: '',
           statusInternet: false,
+          nasName: null,
+          sessionType: null,
+          sessionProvider: null,
         };
       }
 
@@ -194,6 +207,9 @@ export class UserDataService {
           ? getDifference(row.started)
           : formatTime(row.acct_session_time);
 
+      // Determine session type and provider based on NAS name
+      const nasInfo = getNasInfo(row.nas_name || null);
+
       return {
         guestIp: intToIp(row.framed_ip_address),
         duration,
@@ -201,6 +217,9 @@ export class UserDataService {
         getData: convertDataToMB(row.acct_input_octets, row.acct_input_gigawords),
         cid: row.cid,
         statusInternet: true,
+        nasName: row.nas_name || null,
+        sessionType: nasInfo.sessionType,
+        sessionProvider: nasInfo.sessionProvider,
       };
     } catch (error) {
       this.logger.error(`Error getting session info for uid ${uid}:`, error);
@@ -558,13 +577,14 @@ export class UserDataService {
   async getFullUserData(uid: number): Promise<FullUserDataDto> {
     try {
       // Fetch all data in parallel where possible
-      const [basicInfo, internetInfo, sessionInfo, tariffInfo, billingInfo] =
+      const [basicInfo, internetInfo, sessionInfo, tariffInfo, billingInfo, lastSession] =
         await Promise.all([
           this.getUserBasicInfo(uid),
           this.getInternetInfo(uid),
           this.getSessionInfo(uid),
           this.getTariffInfo(uid),
           this.getBillingInfo(uid),
+          this.getLastSession(uid),
         ]);
 
       // Family accounts and services depend on basic info
@@ -601,6 +621,10 @@ export class UserDataService {
         sendData: sessionInfo.sendData,
         getData: sessionInfo.getData,
         statusInternet: sessionInfo.statusInternet,
+        nasName: sessionInfo.nasName,
+        sessionType: sessionInfo.sessionType,
+        sessionProvider: sessionInfo.sessionProvider,
+        lastSession: lastSession,
 
         // Tariff Info
         tariff: tariffInfo.tariff,
@@ -714,19 +738,22 @@ export class UserDataService {
       // Query for detailed session records
       const detailsSQL = `
         SELECT
-          DATE_FORMAT(start, '%Y-%m-%d %H:%i:%s') as start,
-          tp_id,
-          duration,
-          sent,
-          ip,
-          recv,
-          cid,
-          acct_input_gigawords,
-          acct_output_gigawords,
-          guest
-        FROM internet_log
-        WHERE uid = ?
-        ORDER BY start DESC
+          DATE_FORMAT(il.start, '%Y-%m-%d %H:%i:%s') as start,
+          il.tp_id,
+          il.duration,
+          il.sent,
+          il.ip,
+          il.recv,
+          il.cid,
+          il.acct_input_gigawords,
+          il.acct_output_gigawords,
+          il.guest,
+          il.nas_id,
+          n.name AS nas_name
+        FROM internet_log il
+        LEFT JOIN nas n ON il.nas_id = n.id
+        WHERE il.uid = ?
+        ORDER BY il.start DESC
         LIMIT 1000
       `;
 
@@ -739,16 +766,24 @@ export class UserDataService {
       // Build response
       const count = statsResult[0]?.count ? parseInt(statsResult[0].count, 10) : 0;
 
-      const sessions: SessionHistoryItemDto[] = detailsResult.map((row) => ({
-        start: row.start,
-        tpId: row.tp_id,
-        duration: formatTime(row.duration),
-        sendData: convertDataToMB(row.sent, row.acct_output_gigawords),
-        getData: convertDataToMB(row.recv, row.acct_input_gigawords),
-        ip: intToIp(row.ip),
-        cid: String(row.cid || ''),
-        guest: row.guest || 0,
-      }));
+      const sessions: SessionHistoryItemDto[] = detailsResult.map((row) => {
+        // Determine session type and provider based on NAS name
+        const nasInfo = getNasInfo(row.nas_name || null);
+
+        return {
+          start: row.start,
+          tpId: row.tp_id,
+          duration: formatTime(row.duration),
+          sendData: convertDataToMB(row.sent, row.acct_output_gigawords),
+          getData: convertDataToMB(row.recv, row.acct_input_gigawords),
+          ip: intToIp(row.ip),
+          cid: String(row.cid || ''),
+          guest: row.guest || 0,
+          nasName: row.nas_name || null,
+          sessionType: nasInfo.sessionType,
+          sessionProvider: nasInfo.sessionProvider,
+        };
+      });
 
       this.logger.log(`Found ${count} total sessions for uid ${uid}, returning ${sessions.length}`);
 
@@ -759,6 +794,61 @@ export class UserDataService {
     } catch (error) {
       this.logger.error(`Error getting session history for uid ${uid}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Get the most recent closed session from internet_log
+   * Returns null if no sessions exist in history
+   */
+  async getLastSession(uid: number): Promise<SessionHistoryItemDto | null> {
+    try {
+      const sql = `
+        SELECT
+          DATE_FORMAT(il.start, '%Y-%m-%d %H:%i:%s') as start,
+          il.tp_id,
+          il.duration,
+          il.sent,
+          il.ip,
+          il.recv,
+          il.cid,
+          il.acct_input_gigawords,
+          il.acct_output_gigawords,
+          il.guest,
+          il.nas_id,
+          n.name AS nas_name
+        FROM internet_log il
+        LEFT JOIN nas n ON il.nas_id = n.id
+        WHERE il.uid = ?
+        ORDER BY il.start DESC
+        LIMIT 1
+      `;
+
+      const data = await this.mysqlService.query<any[]>(sql, [uid]);
+
+      if (!data || data.length === 0) {
+        return null;
+      }
+
+      const row = data[0];
+      const nasInfo = getNasInfo(row.nas_name || null);
+
+      return {
+        start: row.start,
+        tpId: row.tp_id,
+        duration: formatTime(row.duration),
+        sendData: convertDataToMB(row.sent, row.acct_output_gigawords),
+        getData: convertDataToMB(row.recv, row.acct_input_gigawords),
+        ip: intToIp(row.ip),
+        cid: String(row.cid || ''),
+        guest: row.guest || 0,
+        nasName: row.nas_name || null,
+        sessionType: nasInfo.sessionType,
+        sessionProvider: nasInfo.sessionProvider,
+      };
+    } catch (error) {
+      this.logger.error(`Error getting last session for uid ${uid}:`, error);
+      return null;
     }
   }
 

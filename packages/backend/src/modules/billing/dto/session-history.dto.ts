@@ -51,6 +51,32 @@ export class SessionHistoryItemDto {
     example: 0,
   })
   guest: number;
+
+  @ApiProperty({
+    description: 'NAS name from nas table',
+    example: 'Juniper_BRAS1',
+    required: false,
+    nullable: true,
+  })
+  nasName: string | null;
+
+  @ApiProperty({
+    description: 'Session type (ipoe or pppoe)',
+    example: 'ipoe',
+    required: false,
+    nullable: true,
+    enum: ['ipoe', 'pppoe'],
+  })
+  sessionType: string | null;
+
+  @ApiProperty({
+    description: 'Session provider/company',
+    example: 'intelekt',
+    required: false,
+    nullable: true,
+    enum: ['intelekt', 'opensvit', 'veles'],
+  })
+  sessionProvider: string | null;
 }
 
 /**
