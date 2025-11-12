@@ -16,6 +16,10 @@ export class ApiTokenStrategy extends PassportStrategy(Strategy, 'api-token') {
       throw new UnauthorizedException('Invalid or expired API token');
     }
 
-    return apiToken;
+    // Return apiToken with tokenId for easier access in controllers
+    return {
+      ...apiToken,
+      tokenId: apiToken.id, // Add tokenId field for convenience
+    };
   }
 }

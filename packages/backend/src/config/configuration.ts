@@ -43,6 +43,15 @@ export default () => ({
       timeout: parseInt(process.env.SNMP_TIMEOUT, 10) || 5000, // milliseconds
       retries: parseInt(process.env.SNMP_RETRIES, 10) || 3, // number of retries
     },
+    telnet: {
+      timeout: parseInt(process.env.TELNET_TIMEOUT, 10) || 10000, // milliseconds
+      maxConnections: parseInt(process.env.TELNET_MAX_CONNECTIONS, 10) || 10,
+      idleTimeout: parseInt(process.env.TELNET_IDLE_TIMEOUT, 10) || 60000, // milliseconds
+      loginPrompt: process.env.TELNET_LOGIN_PROMPT || 'Username:',
+      passwordPrompt: process.env.TELNET_PASSWORD_PROMPT || 'Password:',
+      shellPrompt: process.env.TELNET_SHELL_PROMPT || /[>#]\s*$/, // Match both > and # prompts
+      port: parseInt(process.env.TELNET_PORT, 10) || 23,
+    },
   },
   notifications: {
     telegram: {

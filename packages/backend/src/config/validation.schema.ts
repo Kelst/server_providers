@@ -49,6 +49,15 @@ export default Joi.object({
   SMS_SENDER_OPENSVIT: Joi.string().default('Opensvit'),
   SMS_SENDER_INTELEKT: Joi.string().default('INTELEKT'),
 
+  // Equipment Telnet Configuration
+  TELNET_TIMEOUT: Joi.number().default(10000),
+  TELNET_MAX_CONNECTIONS: Joi.number().default(10),
+  TELNET_IDLE_TIMEOUT: Joi.number().default(60000),
+  TELNET_LOGIN_PROMPT: Joi.string().default('login:'),
+  TELNET_PASSWORD_PROMPT: Joi.string().default('Password:'),
+  TELNET_SHELL_PROMPT: Joi.string().default('#'),
+  TELNET_PORT: Joi.number().default(23),
+
   // Payment Systems Configuration
   // Privat24
   STATICTOKEN_PRIVAT24: Joi.string().optional(),

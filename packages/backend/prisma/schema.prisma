@@ -62,6 +62,7 @@ model ApiToken {
   securityEvents    SecurityEvent[]
   rotationHistory   TokenRotationHistory[]
   endpointRules     EndpointRule[]
+  telnetCommandLogs TelnetCommandLog[]
 
   @@index([tokenHash])
   @@index([isActive])
@@ -512,5 +513,32 @@ enum Severity {
   WARNING
   CRITICAL
   EMERGENCY
+}
+
+// Telnet Command Log (історія виконання telnet команд на OLT обладнанні)
+model TelnetCommandLog {
+  id             String              @id @default(uuid())
+  tokenId        String              @map("token_id")
+  deviceIp       String              @map("device_ip") @db.VarChar(45)
+  username       String              // Логін для telnet
+  command        String              @db.Text // Виконана команда
+  response       String?             @db.Text // Відповідь від пристрою (обмежено ~10KB)
+  status         TelnetCommandStatus // SUCCESS або FAILED
+  errorMessage   String?             @map("error_message") @db.Text
+  executionTime  Int                 @map("execution_time") // Час виконання в мс
+  executedAt     DateTime            @default(now()) @map("executed_at")
+
+  token          ApiToken            @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  @@index([tokenId])
+  @@index([deviceIp])
+  @@index([executedAt])
+  @@index([status])
+  @@map("telnet_command_logs")
+}
+
+enum TelnetCommandStatus {
+  SUCCESS
+  FAILED
 }
 

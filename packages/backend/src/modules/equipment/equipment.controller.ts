@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, HttpStatus, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { EquipmentService } from './equipment.service';
 import { ApiTokenGuard } from '../auth/guards/api-token.guard';
@@ -9,11 +9,18 @@ import {
   SnmpQueryDto,
   SnmpResponseDto,
   EquipmentResponseDto,
+  TelnetExecuteDto,
+  TelnetResponseDto,
+  RawCommandResponseDto,
+  OnuStatusRequestDto,
+  OnuStatusResponseDto,
+  SignalLevelRequestDto,
+  SignalLevelResponseDto,
 } from './dto';
 
 /**
  * Equipment Controller
- * API endpoints for SNMP monitoring of network equipment
+ * API endpoints for SNMP and Telnet monitoring of network equipment (OLT devices)
  */
 @ApiTags('equipment')
 @ApiBearerAuth('API-token')
@@ -63,5 +70,87 @@ export class EquipmentController {
         error: error.message,
       };
     }
+  }
+
+  /**
+   * Execute raw telnet command (universal endpoint)
+   */
+  @Post('telnet/execute')
+  @ApiOperation({
+    summary: 'Execute raw telnet command on OLT device',
+    description:
+      'Execute any telnet command on OLT device. Useful for debugging and admin operations. Command output and execution details are automatically logged.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Telnet command executed successfully',
+    type: TelnetResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid request parameters or credentials',
+  })
+  @ApiResponse({
+    status: HttpStatus.GATEWAY_TIMEOUT,
+    description: 'Telnet connection timeout',
+  })
+  async executeTelnetCommand(
+    @Body() dto: TelnetExecuteDto,
+    @Request() req: any,
+  ): Promise<TelnetResponseDto<RawCommandResponseDto>> {
+    const tokenId = req.user?.tokenId;
+    return this.equipmentService.executeTelnetCommand(dto, tokenId);
+  }
+
+  /**
+   * Get ONU status (vendor-specific)
+   */
+  @Post('olt/onu-status')
+  @ApiOperation({
+    summary: 'Get ONU status information',
+    description:
+      'Retrieve status information for a specific ONU (online/offline, type, MAC, distance, etc.). Uses vendor-specific commands and parsers.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'ONU status retrieved successfully',
+    type: TelnetResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid parameters or unsupported vendor',
+  })
+  async getOnuStatus(
+    @Body() dto: OnuStatusRequestDto,
+    @Request() req: any,
+  ): Promise<TelnetResponseDto<OnuStatusResponseDto>> {
+    const tokenId = req.user?.tokenId;
+    return this.equipmentService.getOnuStatus(dto, tokenId);
+  }
+
+  /**
+   * Get ONU signal level (vendor-specific)
+   */
+  @Post('olt/signal-level')
+  @ApiOperation({
+    summary: 'Get ONU signal level (DDM)',
+    description:
+      'Retrieve ONU optical signal levels: RX/TX power, temperature, voltage, bias current. Uses vendor-specific DDM commands.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Signal level retrieved successfully',
+    type: TelnetResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid parameters or unsupported vendor',
+  })
+  async getSignalLevel(
+    @Body() dto: SignalLevelRequestDto,
+    @Request() req: any,
+  ): Promise<TelnetResponseDto<SignalLevelResponseDto>> {
+    const tokenId = req.user?.tokenId;
+    return this.equipmentService.getSignalLevel(dto, tokenId);
   }
 }
