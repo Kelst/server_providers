@@ -112,13 +112,11 @@ export interface OnuStatusData {
   macAddress?: string;
   description?: string; // ONU description (e.g., 'N/A' or custom description)
   bindType?: string; // static or dynamic
-  oltStatus?: string; // Original OLT status from table (e.g., 'auto-configured', 'deregistered')
+  onuStatus?: string; // ONU status from OLT (e.g., 'auto-configured', 'deregistered')
   distance?: number; // in meters
   oamStatus?: string; // OAM status (e.g., 'ctc-oam-oper')
   lastDeregReason?: string; // Last deregistration reason
   aliveTime?: string; // Alive time (for online) or absent time (for offline)
-  lastRegTime?: string; // Last registration time
-  lastDeregTime?: string; // Last deregistration time
   uptime?: string;
   error?: string; // Error message if ONU not found or parsing failed
   rawData?: any; // Additional vendor-specific data

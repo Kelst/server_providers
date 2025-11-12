@@ -38,10 +38,10 @@ export class OnuStatusResponseDto {
   @IsEnum(['online', 'offline', 'unknown'])
   status: 'online' | 'offline' | 'unknown';
 
-  @ApiProperty({ description: 'Original OLT status from table', example: 'auto-configured', required: false })
+  @ApiProperty({ description: 'ONU status from OLT', example: 'auto-configured', required: false })
   @IsOptional()
   @IsString()
-  oltStatus?: string;
+  onuStatus?: string;
 
   @ApiProperty({ description: 'Vendor ID', example: 'PICO', required: false })
   @IsOptional()
@@ -87,16 +87,6 @@ export class OnuStatusResponseDto {
   @IsOptional()
   @IsString()
   oamStatus?: string;
-
-  @ApiProperty({ description: 'Last registration time', example: '2000-05-09 00:33:43', required: false })
-  @IsOptional()
-  @IsString()
-  lastRegTime?: string;
-
-  @ApiProperty({ description: 'Last deregistration time', example: '2000-05-09 00:33:04', required: false })
-  @IsOptional()
-  @IsString()
-  lastDeregTime?: string;
 
   @ApiProperty({ description: 'Alive time (online) or Absent time (offline)', example: '0  .01:15:39', required: false })
   @IsOptional()

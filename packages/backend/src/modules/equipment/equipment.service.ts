@@ -291,7 +291,7 @@ export class EquipmentService {
             const inactiveData = vendor.parseInactiveOnu(inactiveResult.output);
             // Merge inactive-onu data into parsed data
             Object.assign(parsed, inactiveData);
-            this.logger.debug(`Inactive ONU data merged: lastRegTime=${inactiveData.lastRegTime}, aliveTime=${inactiveData.aliveTime}`);
+            this.logger.debug(`Inactive ONU data merged: aliveTime=${inactiveData.aliveTime}, lastDeregReason=${inactiveData.lastDeregReason}`);
           }
         } catch (error) {
           this.logger.warn(`Failed to fetch inactive ONU details: ${error.message}`);
@@ -343,53 +343,56 @@ export class EquipmentService {
       const vendor = this.vendorFactory.getVendor(dto.vendorType || 'bdcom');
 
       // Get command for this vendor
-      const command = vendor.getSignalLevelCommand(port, onuId);
+      const fullCommand = vendor.getSignalLevelCommand(port, onuId);
 
-      // Execute commands (for BDCOM: enable, then show command)
-      const commands = command.split('\n').filter(cmd => cmd.trim());
-      const results = await this.telnetService.executeMultipleCommands(
+      // Extract just the main command (remove "enable\n" prefix if present)
+      const mainCommand = fullCommand.split('\n').filter(cmd => cmd.trim() && !cmd.trim().toLowerCase().startsWith('enable')).join('');
+
+      this.logger.debug(`Executing signal level command for ${dto.interface}: ${mainCommand}`);
+
+      // Execute command using sequential flow with enable mode
+      const result = await this.telnetService.executeSequentialCommands(
         {
           host: dto.ip,
           username: dto.username,
           password: dto.password,
+          port: dto.port,
         },
-        commands
+        mainCommand,
+        {
+          enableMode: true,           // Auto-execute enable before command
+          finalCommandDelay: 500,     // Wait 500ms after command for output
+        }
       );
 
       const executionTime = Date.now() - startTime;
-
-      // Get the last result (the actual data command)
-      const lastResult = results[results.length - 1];
-
-      // Combine all outputs for logging
-      const combinedOutput = results.map(r => r.output).join('\n');
-      const fullCommand = commands.join(' && ');
 
       // Log command
       this.logTelnetCommand(
         tokenId,
         dto.ip,
         dto.username,
-        fullCommand,
-        combinedOutput,
-        lastResult?.success ? 'SUCCESS' : 'FAILED',
-        lastResult?.error,
+        mainCommand,
+        result.output,
+        result.success ? 'SUCCESS' : 'FAILED',
+        result.error,
         executionTime
       ).catch((error) => {
         this.logger.error('Failed to log telnet command:', error);
       });
 
-      if (!lastResult || !lastResult.success) {
+      // Check if command execution failed
+      if (!result.success) {
         return {
           success: false,
           executionTime,
           timestamp: new Date().toISOString(),
-          error: lastResult?.error || 'Command execution failed',
+          error: result.error || 'Command execution failed',
         };
       }
 
       // Parse output using vendor parser
-      const parsed = vendor.parseSignalLevel(lastResult.output);
+      const parsed = vendor.parseSignalLevel(result.output);
 
       return {
         success: true,

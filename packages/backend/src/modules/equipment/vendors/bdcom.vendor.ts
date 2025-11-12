@@ -167,7 +167,7 @@ export class BdcomVendor implements IOltVendor {
 
           // 7. Status (index 1) - keep original value and map to online/offline/unknown
           const statusStr = parts2[1];
-          data.oltStatus = statusStr; // Store original OLT status value
+          data.onuStatus = statusStr; // Store original ONU status value
 
           const statusLower = statusStr.toLowerCase();
           if (statusLower === 'auto-configured' || statusLower === 'registered' || statusLower === 'online') {
@@ -346,16 +346,6 @@ export class BdcomVendor implements IOltVendor {
           data.distance = distance;
         }
 
-        // LastRegTime (index 6 and 7 - date and time)
-        if (parts[6] !== 'N/A' && parts[7] !== 'N/A') {
-          data.lastRegTime = `${parts[6]} ${parts[7]}`;
-        }
-
-        // LastDeregTime (index 8 and 9 - date and time)
-        if (parts[8] !== 'N/A' && parts[9] !== 'N/A') {
-          data.lastDeregTime = `${parts[8]} ${parts[9]}`;
-        }
-
         // LastDeregReason (index 10)
         if (parts[10] !== 'N/A') {
           data.lastDeregReason = parts[10];
@@ -456,16 +446,6 @@ export class BdcomVendor implements IOltVendor {
       const parts = dataLine.trim().split(/\s+/);
 
       if (parts.length >= 7) {
-        // LastRegTime (index 3 and 4 - date and time)
-        if (parts[3] !== 'N/A' && parts[4] !== 'N/A') {
-          data.lastRegTime = `${parts[3]} ${parts[4]}`;
-        }
-
-        // LastDeregTime (index 5 and 6 - date and time)
-        if (parts[5] !== 'N/A' && parts[6] !== 'N/A') {
-          data.lastDeregTime = `${parts[5]} ${parts[6]}`;
-        }
-
         // LastDeregReason (index 7)
         if (parts.length > 7 && parts[7] !== 'N/A') {
           data.lastDeregReason = parts[7];
@@ -488,54 +468,65 @@ export class BdcomVendor implements IOltVendor {
   /**
    * Get signal level command for BDCOM
    *
-   * Example: show epon onu-ddm epon0/1:1
+   * Example: show epon interface ePON 0/1:4 onu ctc optical-transceiver-diagnosis
    */
   getSignalLevelCommand(port: string, onuId: string): string {
-    // TODO: Replace with actual BDCOM command
-    return `show epon onu-ddm epon${port}:${onuId}`;
+    return `show epon interface ePON ${port}:${onuId} onu ctc optical-transceiver-diagnosis`;
   }
 
   /**
    * Parse BDCOM signal level output
+   *
+   * Expected format:
+   *  operating temperature(degree): 23
+   *  supply voltage(V): 3.3
+   *  bias current(mA): 11.3
+   *  transmitted power(DBm): 1.5
+   *  received power(DBm): -16.2
    */
   parseSignalLevel(rawOutput: string): SignalLevelData {
     try {
-      // TODO: Implement actual parsing logic
-
       const data: SignalLevelData = {
         port: '',
         onuId: '',
         rawData: { output: rawOutput },
       };
 
-      const lines = rawOutput.split('\n');
+      // Check if output is empty (ONU offline)
+      const trimmedOutput = rawOutput.trim();
+      if (!trimmedOutput || trimmedOutput.length < 10) {
+        this.logger.warn('Empty signal level output - ONU likely offline');
+        return data;
+      }
 
-      for (const line of lines) {
-        const trimmedLine = line.trim();
+      // Parse operating temperature(degree): 23
+      const tempMatch = rawOutput.match(/operating\s+temperature\(degree\):\s*(-?\d+\.?\d*)/i);
+      if (tempMatch) {
+        data.temperature = parseFloat(tempMatch[1]);
+      }
 
-        // Example: Extract RX power (adjust regex for actual format)
-        const rxMatch = trimmedLine.match(/RX.*?(-?\d+\.?\d*)\s*dBm/i);
-        if (rxMatch) {
-          data.rxPower = parseFloat(rxMatch[1]);
-        }
+      // Parse supply voltage(V): 3.3
+      const voltageMatch = rawOutput.match(/supply\s+voltage\(V\):\s*(-?\d+\.?\d*)/i);
+      if (voltageMatch) {
+        data.voltage = parseFloat(voltageMatch[1]);
+      }
 
-        // Example: Extract TX power
-        const txMatch = trimmedLine.match(/TX.*?(-?\d+\.?\d*)\s*dBm/i);
-        if (txMatch) {
-          data.txPower = parseFloat(txMatch[1]);
-        }
+      // Parse bias current(mA): 11.3
+      const biasMatch = rawOutput.match(/bias\s+current\(mA\):\s*(-?\d+\.?\d*)/i);
+      if (biasMatch) {
+        data.biasCurrent = parseFloat(biasMatch[1]);
+      }
 
-        // Temperature
-        const tempMatch = trimmedLine.match(/Temperature.*?(\d+\.?\d*)/i);
-        if (tempMatch) {
-          data.temperature = parseFloat(tempMatch[1]);
-        }
+      // Parse transmitted power(DBm): 1.5
+      const txMatch = rawOutput.match(/transmitted\s+power\(DBm\):\s*(-?\d+\.?\d*)/i);
+      if (txMatch) {
+        data.txPower = parseFloat(txMatch[1]);
+      }
 
-        // Voltage
-        const voltMatch = trimmedLine.match(/Voltage.*?(\d+\.?\d*)/i);
-        if (voltMatch) {
-          data.voltage = parseFloat(voltMatch[1]);
-        }
+      // Parse received power(DBm): -16.2 (MOST IMPORTANT)
+      const rxMatch = rawOutput.match(/received\s+power\(DBm\):\s*(-?\d+\.?\d*)/i);
+      if (rxMatch) {
+        data.rxPower = parseFloat(rxMatch[1]);
       }
 
       return data;
