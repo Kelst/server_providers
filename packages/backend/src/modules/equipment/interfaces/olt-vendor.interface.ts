@@ -97,6 +97,57 @@ export interface IOltVendor {
    * @returns Parsed inactive ONU data (partial, will be merged with status data)
    */
   parseInactiveOnu?(rawOutput: string): Partial<OnuStatusData>;
+
+  /**
+   * Get ONU running configuration command
+   *
+   * @param port - PON port
+   * @param onuId - ONU ID
+   * @returns Command string
+   */
+  getOnuConfigCommand?(port: string, onuId: string): string;
+
+  /**
+   * Parse ONU configuration output
+   *
+   * @param rawOutput - Raw command output
+   * @returns Parsed configuration data
+   */
+  parseOnuConfig?(rawOutput: string): OnuConfigData;
+
+  /**
+   * Get ONU MAC address table command
+   *
+   * @param port - PON port
+   * @param onuId - ONU ID
+   * @returns Command string
+   */
+  getOnuMacTableCommand?(port: string, onuId: string): string;
+
+  /**
+   * Parse MAC address table output
+   *
+   * @param rawOutput - Raw command output
+   * @returns Array of MAC address entries
+   */
+  parseOnuMacTable?(rawOutput: string): MacAddressEntry[];
+
+  /**
+   * Get ONU port state command
+   *
+   * @param port - PON port
+   * @param onuId - ONU ID
+   * @returns Command string
+   */
+  getOnuPortStateCommand?(port: string, onuId: string): string;
+
+  /**
+   * Parse ONU port state output
+   *
+   * @param rawOutput - Raw command output
+   * @returns Port state data
+   */
+  parseOnuPortState?(rawOutput: string): PortStateData;
 }
 
 /**
@@ -154,4 +205,39 @@ export interface OnuInfoData {
     downstream?: number;
   };
   rawData?: any;
+}
+
+/**
+ * ONU Configuration Data
+ */
+export interface OnuConfigData {
+  vlanMode?: string;
+  vlanId?: number;
+  priority?: number;
+  upstreamSla?: {
+    pir?: number; // Peak Information Rate (kbps)
+    cir?: number; // Committed Information Rate (kbps)
+  };
+  downstreamSla?: {
+    pir?: number;
+    cir?: number;
+  };
+}
+
+/**
+ * MAC Address Table Entry
+ */
+export interface MacAddressEntry {
+  macAddress: string;
+  vlan: number;
+  type?: string; // 'DYNAMIC', 'STATIC', etc.
+}
+
+/**
+ * Port State Data
+ */
+export interface PortStateData {
+  hardwareState: string; // 'Link-Up', 'Link-Down'
+  speed?: string; // '100Mbps', '1Gbps'
+  duplex?: string; // 'Full-Duplex', 'Half-Duplex'
 }

@@ -19,29 +19,23 @@ export class SignalLevelRequestDto extends TelnetCredentialsDto {
  * Signal Level Response DTO
  */
 export class SignalLevelResponseDto {
-  @ApiProperty({ description: 'PON port', example: '0/1' })
-  port: string;
-
-  @ApiProperty({ description: 'ONU ID', example: '1' })
-  onuId: string;
-
   @ApiProperty({
     description: 'Received power at OLT (dBm)',
-    example: -25.5,
+    example: -16.2,
     required: false,
   })
   rxPower?: number;
 
   @ApiProperty({
     description: 'Transmitted power from ONU (dBm)',
-    example: 2.3,
+    example: 1.5,
     required: false,
   })
   txPower?: number;
 
   @ApiProperty({
     description: 'Temperature (Celsius)',
-    example: 45,
+    example: 22,
     required: false,
   })
   temperature?: number;
@@ -55,11 +49,8 @@ export class SignalLevelResponseDto {
 
   @ApiProperty({
     description: 'Bias current (mA)',
-    example: 25.5,
+    example: 11.2,
     required: false,
   })
   biasCurrent?: number;
-
-  @ApiProperty({ description: 'Additional vendor-specific data', required: false })
-  rawData?: any;
 }

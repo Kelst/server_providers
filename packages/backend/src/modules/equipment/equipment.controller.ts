@@ -16,6 +16,8 @@ import {
   OnuStatusResponseDto,
   SignalLevelRequestDto,
   SignalLevelResponseDto,
+  OnuDetailsRequestDto,
+  OnuDetailsResponseDto,
 } from './dto';
 
 /**
@@ -152,5 +154,31 @@ export class EquipmentController {
   ): Promise<TelnetResponseDto<SignalLevelResponseDto>> {
     const tokenId = req.user?.tokenId;
     return this.equipmentService.getSignalLevel(dto, tokenId);
+  }
+
+  /**
+   * Get ONU detailed configuration and state (vendor-specific)
+   */
+  @Post('olt/onu-details')
+  @ApiOperation({
+    summary: 'Get ONU detailed configuration and state',
+    description:
+      'Retrieve ONU configuration, MAC addresses, and port state using vendor-specific commands. Executes 3 sequential commands: running-config, mac address-table, and port state.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'ONU details retrieved successfully',
+    type: TelnetResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid parameters or unsupported vendor',
+  })
+  async getOnuDetails(
+    @Body() dto: OnuDetailsRequestDto,
+    @Request() req: any,
+  ): Promise<TelnetResponseDto<OnuDetailsResponseDto>> {
+    const tokenId = req.user?.tokenId;
+    return this.equipmentService.getOnuDetails(dto, tokenId);
   }
 }

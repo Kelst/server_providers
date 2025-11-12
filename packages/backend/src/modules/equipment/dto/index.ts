@@ -8,3 +8,4 @@ export * from './telnet-execute.dto';
 export * from './telnet-response.dto';
 export * from './onu-status.dto';
 export * from './signal-level.dto';
+export * from './onu-details.dto';

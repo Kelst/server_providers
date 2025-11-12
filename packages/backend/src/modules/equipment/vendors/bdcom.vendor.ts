@@ -3,6 +3,9 @@ import {
   OnuStatusData,
   SignalLevelData,
   OnuInfoData,
+  OnuConfigData,
+  MacAddressEntry,
+  PortStateData,
 } from '../interfaces/olt-vendor.interface';
 import { Logger } from '@nestjs/common';
 
@@ -590,6 +593,199 @@ export class BdcomVendor implements IOltVendor {
         port: '',
         onuId: '',
         rawData: { output: rawOutput, error: error.message },
+      };
+    }
+  }
+
+  /**
+   * Get ONU running configuration command for BDCOM
+   *
+   * Example: show running-config interface ePON 0/1:4
+   */
+  getOnuConfigCommand(port: string, onuId: string): string {
+    return `show running-config interface ePON ${port}:${onuId}`;
+  }
+
+  /**
+   * Parse BDCOM ONU configuration output
+   *
+   * Expected format:
+   * Current configuration:
+   * !
+   * interface EPON0/1:4
+   *   epon onu port 1 ctc vlan mode tag 104 priority 0
+   *  epon sla upstream pir 1000000 cir 512
+   *  epon sla downstream pir 1000000 cir 512
+   */
+  parseOnuConfig(rawOutput: string): OnuConfigData {
+    try {
+      const data: OnuConfigData = {};
+
+      // Check if output is empty (ONU offline)
+      if (!rawOutput || rawOutput.trim().length < 10) {
+        this.logger.warn('Empty config output - ONU likely offline');
+        return data;
+      }
+
+      // Parse VLAN configuration: epon onu port 1 ctc vlan mode tag 104 priority 0
+      const vlanMatch = rawOutput.match(/epon\s+onu\s+port\s+\d+\s+ctc\s+vlan\s+mode\s+(\w+)\s+(\d+)\s+priority\s+(\d+)/i);
+      if (vlanMatch) {
+        data.vlanMode = vlanMatch[1]; // 'tag', 'transparent', etc.
+        data.vlanId = parseInt(vlanMatch[2], 10);
+        data.priority = parseInt(vlanMatch[3], 10);
+      }
+
+      // Parse upstream SLA: epon sla upstream pir 1000000 cir 512
+      const upstreamMatch = rawOutput.match(/epon\s+sla\s+upstream\s+pir\s+(\d+)\s+cir\s+(\d+)/i);
+      if (upstreamMatch) {
+        data.upstreamSla = {
+          pir: parseInt(upstreamMatch[1], 10),
+          cir: parseInt(upstreamMatch[2], 10),
+        };
+      }
+
+      // Parse downstream SLA: epon sla downstream pir 1000000 cir 512
+      const downstreamMatch = rawOutput.match(/epon\s+sla\s+downstream\s+pir\s+(\d+)\s+cir\s+(\d+)/i);
+      if (downstreamMatch) {
+        data.downstreamSla = {
+          pir: parseInt(downstreamMatch[1], 10),
+          cir: parseInt(downstreamMatch[2], 10),
+        };
+      }
+
+      return data;
+    } catch (error) {
+      this.logger.error('Failed to parse ONU config:', error);
+      return {};
+    }
+  }
+
+  /**
+   * Get MAC address table command for BDCOM
+   *
+   * Example: show mac address-table interface ePON 0/1:4
+   */
+  getOnuMacTableCommand(port: string, onuId: string): string {
+    return `show mac address-table interface ePON ${port}:${onuId}`;
+  }
+
+  /**
+   * Parse BDCOM MAC address table output
+   *
+   * Expected format:
+   *         Mac Address Table (Total 1)
+   * ------------------------------------------
+   *
+   * Vlan    Mac Address       Type       Ports
+   * ----    -----------       ----       -----
+   * 104    d847.321e.d80f      DYNAMIC    epon0/1:4
+   */
+  parseOnuMacTable(rawOutput: string): MacAddressEntry[] {
+    try {
+      const entries: MacAddressEntry[] = [];
+
+      // Check if output is empty (ONU offline)
+      if (!rawOutput || rawOutput.trim().length < 10) {
+        this.logger.warn('Empty MAC table output - ONU likely offline');
+        return entries;
+      }
+
+      // Split by lines and find MAC entries
+      const lines = rawOutput.split('\n');
+
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+
+        // Skip header lines and empty lines
+        if (!trimmedLine || trimmedLine.includes('---') || trimmedLine.includes('Mac Address') || trimmedLine.includes('Total')) {
+          continue;
+        }
+
+        // Parse MAC entry: 104    d847.321e.d80f      DYNAMIC    epon0/1:4
+        const parts = trimmedLine.split(/\s+/);
+
+        if (parts.length >= 4) {
+          const vlanStr = parts[0];
+          const macStr = parts[1];
+          const typeStr = parts[2];
+
+          // Validate VLAN is a number
+          const vlan = parseInt(vlanStr, 10);
+          if (isNaN(vlan)) {
+            continue;
+          }
+
+          // Validate MAC format (e.g., d847.321e.d80f)
+          if (macStr && macStr.match(/^[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}$/i)) {
+            entries.push({
+              macAddress: macStr,
+              vlan: vlan,
+              type: typeStr,
+            });
+          }
+        }
+      }
+
+      return entries;
+    } catch (error) {
+      this.logger.error('Failed to parse MAC table:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get ONU port state command for BDCOM
+   *
+   * Example: show epon interface ePON 0/1:4 onu port 1 state
+   */
+  getOnuPortStateCommand(port: string, onuId: string): string {
+    return `show epon interface ePON ${port}:${onuId} onu port 1 state`;
+  }
+
+  /**
+   * Parse BDCOM ONU port state output
+   *
+   * Expected format:
+   *     Hardware state is Link-Up
+   *     Speed is 100Mbps
+   *     Duplex is Full-Duplex
+   */
+  parseOnuPortState(rawOutput: string): PortStateData {
+    try {
+      const data: PortStateData = {
+        hardwareState: 'unknown',
+      };
+
+      // Check if output is empty (ONU offline)
+      if (!rawOutput || rawOutput.trim().length < 10) {
+        this.logger.warn('Empty port state output - ONU likely offline');
+        data.hardwareState = 'Link-Down';
+        return data;
+      }
+
+      // Parse Hardware state: Hardware state is Link-Up
+      const stateMatch = rawOutput.match(/Hardware\s+state\s+is\s+(\S+)/i);
+      if (stateMatch) {
+        data.hardwareState = stateMatch[1]; // 'Link-Up', 'Link-Down'
+      }
+
+      // Parse Speed: Speed is 100Mbps
+      const speedMatch = rawOutput.match(/Speed\s+is\s+(\S+)/i);
+      if (speedMatch) {
+        data.speed = speedMatch[1]; // '100Mbps', '1Gbps'
+      }
+
+      // Parse Duplex: Duplex is Full-Duplex
+      const duplexMatch = rawOutput.match(/Duplex\s+is\s+(\S+)/i);
+      if (duplexMatch) {
+        data.duplex = duplexMatch[1]; // 'Full-Duplex', 'Half-Duplex'
+      }
+
+      return data;
+    } catch (error) {
+      this.logger.error('Failed to parse port state:', error);
+      return {
+        hardwareState: 'unknown',
       };
     }
   }

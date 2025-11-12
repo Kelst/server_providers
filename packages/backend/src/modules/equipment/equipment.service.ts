@@ -12,6 +12,8 @@ import {
   OnuStatusResponseDto,
   SignalLevelRequestDto,
   SignalLevelResponseDto,
+  OnuDetailsRequestDto,
+  OnuDetailsResponseDto,
 } from './dto';
 
 /**
@@ -397,9 +399,159 @@ export class EquipmentService {
       return {
         success: true,
         data: {
-          port,
-          onuId,
-          ...parsed,
+          temperature: parsed.temperature,
+          voltage: parsed.voltage,
+          biasCurrent: parsed.biasCurrent,
+          txPower: parsed.txPower,
+          rxPower: parsed.rxPower,
+        },
+        executionTime,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+
+      return {
+        success: false,
+        executionTime,
+        timestamp: new Date().toISOString(),
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Get ONU detailed configuration and state
+   */
+  async getOnuDetails(
+    dto: OnuDetailsRequestDto,
+    tokenId: string
+  ): Promise<TelnetResponseDto<OnuDetailsResponseDto>> {
+    const startTime = Date.now();
+
+    try {
+      // Parse interface parameter
+      const { port, onuId } = this.parseEponInterface(dto.interface);
+
+      // Get vendor implementation
+      const vendor = this.vendorFactory.getVendor(dto.vendorType || 'bdcom');
+
+      // Check if vendor supports ONU details commands
+      if (!vendor.getOnuConfigCommand || !vendor.getOnuMacTableCommand || !vendor.getOnuPortStateCommand) {
+        return {
+          success: false,
+          executionTime: Date.now() - startTime,
+          timestamp: new Date().toISOString(),
+          error: 'Vendor does not support ONU details commands',
+        };
+      }
+
+      // Get all 3 commands
+      const configCommand = vendor.getOnuConfigCommand(port, onuId);
+      const macTableCommand = vendor.getOnuMacTableCommand(port, onuId);
+      const portStateCommand = vendor.getOnuPortStateCommand(port, onuId);
+
+      this.logger.debug(`Executing ONU details commands for ${dto.interface}`);
+
+      // Execute all 3 commands sequentially
+      const configResult = await this.telnetService.executeSequentialCommands(
+        {
+          host: dto.ip,
+          username: dto.username,
+          password: dto.password,
+          port: dto.port,
+        },
+        configCommand,
+        {
+          enableMode: true,
+          finalCommandDelay: 500,
+        }
+      );
+
+      const macTableResult = await this.telnetService.executeSequentialCommands(
+        {
+          host: dto.ip,
+          username: dto.username,
+          password: dto.password,
+          port: dto.port,
+        },
+        macTableCommand,
+        {
+          enableMode: true,
+          finalCommandDelay: 500,
+        }
+      );
+
+      const portStateResult = await this.telnetService.executeSequentialCommands(
+        {
+          host: dto.ip,
+          username: dto.username,
+          password: dto.password,
+          port: dto.port,
+        },
+        portStateCommand,
+        {
+          enableMode: true,
+          finalCommandDelay: 500,
+        }
+      );
+
+      const executionTime = Date.now() - startTime;
+
+      // Check if all commands returned empty (ONU offline)
+      const allEmpty =
+        (!configResult.output || configResult.output.trim().length < 10) &&
+        (!macTableResult.output || macTableResult.output.trim().length < 10) &&
+        (!portStateResult.output || portStateResult.output.trim().length < 10);
+
+      if (allEmpty) {
+        // Log the attempt
+        this.logTelnetCommand(
+          tokenId,
+          dto.ip,
+          dto.username,
+          `${configCommand}; ${macTableCommand}; ${portStateCommand}`,
+          '',
+          'FAILED',
+          'ONU offline - all commands returned empty',
+          executionTime
+        ).catch((error) => {
+          this.logger.error('Failed to log telnet command:', error);
+        });
+
+        return {
+          success: false,
+          executionTime,
+          timestamp: new Date().toISOString(),
+          error: 'ONU offline - all commands returned empty',
+        };
+      }
+
+      // Parse all outputs
+      const config = vendor.parseOnuConfig ? vendor.parseOnuConfig(configResult.output) : undefined;
+      const macAddresses = vendor.parseOnuMacTable ? vendor.parseOnuMacTable(macTableResult.output) : undefined;
+      const portState = vendor.parseOnuPortState ? vendor.parseOnuPortState(portStateResult.output) : undefined;
+
+      // Log successful execution
+      this.logTelnetCommand(
+        tokenId,
+        dto.ip,
+        dto.username,
+        `${configCommand}; ${macTableCommand}; ${portStateCommand}`,
+        `Config: ${configResult.output.length} bytes, MAC: ${macTableResult.output.length} bytes, State: ${portStateResult.output.length} bytes`,
+        'SUCCESS',
+        undefined,
+        executionTime
+      ).catch((error) => {
+        this.logger.error('Failed to log telnet command:', error);
+      });
+
+      return {
+        success: true,
+        data: {
+          config,
+          macAddresses,
+          portState,
         },
         executionTime,
         timestamp: new Date().toISOString(),
