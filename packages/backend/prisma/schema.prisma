@@ -63,6 +63,7 @@ model ApiToken {
   rotationHistory   TokenRotationHistory[]
   endpointRules     EndpointRule[]
   telnetCommandLogs TelnetCommandLog[]
+  pppoeVlanConfigs  PppoeVlanConfig[]
 
   @@index([tokenHash])
   @@index([isActive])
@@ -540,5 +541,23 @@ model TelnetCommandLog {
 enum TelnetCommandStatus {
   SUCCESS
   FAILED
+}
+
+// PPPoE VLAN Configuration (mapping OLT IP to VLAN ID)
+model PppoeVlanConfig {
+  id          String   @id @default(uuid())
+  oltIp       String   @unique @map("olt_ip") @db.VarChar(45)
+  vlanId      Int      @map("vlan_id")
+  description String?  @db.Text
+  tokenId     String   @map("token_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  token       ApiToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  @@index([oltIp])
+  @@index([vlanId])
+  @@index([tokenId])
+  @@map("pppoe_vlan_configs")
 }
 

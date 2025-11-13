@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { seedPppoeVlans } from './pppoe-vlan-seed';
 
 const prisma = new PrismaClient();
 
@@ -44,13 +45,13 @@ async function main() {
   const token1 = 'demo_token_' + Math.random().toString(36).substring(2, 15);
   const tokenHash1 = await bcrypt.hash(token1, 10);
 
-  await prisma.apiToken.create({
+  const demoToken = await prisma.apiToken.create({
     data: {
       token: token1,
       tokenHash: tokenHash1,
       projectName: 'Demo Project - Full Access',
       description: 'Demo token with all scopes',
-      scopes: ['billing', 'userside', 'analytics', 'shared'],
+      scopes: ['billing', 'userside', 'analytics', 'shared', 'equipment'],
       isActive: true,
       rateLimit: 100,
       createdBy: admin.id,
@@ -73,11 +74,14 @@ async function main() {
     },
   });
 
+  // Seed PPPoE VLAN configurations
+  await seedPppoeVlans(prisma, demoToken.id);
+
   console.log('✅ Created admin user:', admin.email);
   console.log('');
   console.log('🔑 API Tokens:');
   console.log('   Full Access Token:', token1);
-  console.log('   Scopes: billing, userside, analytics, shared');
+  console.log('   Scopes: billing, userside, analytics, shared, equipment');
   console.log('');
   console.log('   Billing Only Token:', token2);
   console.log('   Scopes: billing');

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { EquipmentController } from './equipment.controller';
 import { EquipmentService } from './equipment.service';
+import { PppoeVlanService } from './pppoe-vlan.service';
 import { SnmpService } from './snmp.service';
 import { TelnetService } from './telnet.service';
 import { VendorFactory } from './vendors/vendor.factory';
@@ -19,12 +20,14 @@ import { DatabaseModule } from '../database/database.module';
   controllers: [EquipmentController],
   providers: [
     EquipmentService,
+    PppoeVlanService,
     SnmpService,
     TelnetService,
     VendorFactory,
   ],
   exports: [
     EquipmentService,
+    PppoeVlanService,
     SnmpService,
     TelnetService,
     VendorFactory,

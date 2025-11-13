@@ -1,6 +1,7 @@
-import { Controller, Post, Body, UseGuards, HttpStatus, Request } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Body, Param, Query, UseGuards, HttpStatus, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { EquipmentService } from './equipment.service';
+import { PppoeVlanService } from './pppoe-vlan.service';
 import { ApiTokenGuard } from '../auth/guards/api-token.guard';
 import { ScopeGuard } from '../../common/guards/scope.guard';
 import { RequireScopes } from '../../common/decorators/require-scopes.decorator';
@@ -18,6 +19,10 @@ import {
   SignalLevelResponseDto,
   OnuDetailsRequestDto,
   OnuDetailsResponseDto,
+  CreatePppoeVlanDto,
+  UpdatePppoeVlanDto,
+  PppoeVlanResponseDto,
+  PppoeVlanQueryDto,
 } from './dto';
 
 /**
@@ -30,7 +35,10 @@ import {
 @UseGuards(ApiTokenGuard, ScopeGuard)
 @RequireScopes(ApiScope.EQUIPMENT)
 export class EquipmentController {
-  constructor(private equipmentService: EquipmentService) {}
+  constructor(
+    private equipmentService: EquipmentService,
+    private pppoeVlanService: PppoeVlanService,
+  ) {}
 
   /**
    * Execute raw SNMP query
@@ -180,5 +188,142 @@ export class EquipmentController {
   ): Promise<TelnetResponseDto<OnuDetailsResponseDto>> {
     const tokenId = req.user?.tokenId;
     return this.equipmentService.getOnuDetails(dto, tokenId);
+  }
+
+  // ==================== PPPoE VLAN Configuration Endpoints ====================
+
+  /**
+   * Get all PPPoE VLAN configurations (with optional filtering)
+   */
+  @Get('pppoe-vlans')
+  @ApiOperation({
+    summary: 'Get all PPPoE VLAN configurations',
+    description: 'Retrieve all OLT IP to PPPoE VLAN mappings. Supports filtering by IP or VLAN ID.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'List of PPPoE VLAN configurations',
+  })
+  async findAllPppoeVlans(@Query() query: PppoeVlanQueryDto) {
+    return this.pppoeVlanService.findAll(query);
+  }
+
+  /**
+   * Get PPPoE VLAN configuration by ID
+   */
+  @Get('pppoe-vlans/:id')
+  @ApiOperation({
+    summary: 'Get PPPoE VLAN configuration by ID',
+    description: 'Retrieve a single PPPoE VLAN configuration by its UUID.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'PPPoE VLAN configuration found',
+    type: PppoeVlanResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'Configuration not found',
+  })
+  async findOnePppoeVlan(@Param('id') id: string) {
+    return this.pppoeVlanService.findOne(id);
+  }
+
+  /**
+   * Get VLAN by OLT IP address (fast lookup)
+   */
+  @Get('pppoe-vlans/by-ip/:ip')
+  @ApiOperation({
+    summary: 'Get VLAN by OLT IP address',
+    description: 'Fast lookup to get PPPoE VLAN ID for a specific OLT IP address.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'VLAN configuration found',
+    type: PppoeVlanResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'Configuration not found for this IP',
+  })
+  async findPppoeVlanByIp(@Param('ip') ip: string) {
+    return this.pppoeVlanService.findByIp(ip);
+  }
+
+  /**
+   * Create new PPPoE VLAN configuration
+   */
+  @Post('pppoe-vlans')
+  @ApiOperation({
+    summary: 'Create PPPoE VLAN configuration',
+    description: 'Map OLT IP address to PPPoE VLAN ID. IP must be unique.',
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: 'Configuration created successfully',
+    type: PppoeVlanResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description: 'Configuration for this IP already exists',
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid IP address or VLAN ID',
+  })
+  async createPppoeVlan(
+    @Body() dto: CreatePppoeVlanDto,
+    @Request() req: any,
+  ) {
+    const tokenId = req.user?.tokenId;
+    return this.pppoeVlanService.create(dto, tokenId);
+  }
+
+  /**
+   * Update existing PPPoE VLAN configuration
+   */
+  @Patch('pppoe-vlans/:id')
+  @ApiOperation({
+    summary: 'Update PPPoE VLAN configuration',
+    description: 'Update OLT IP, VLAN ID, or description. IP must remain unique.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Configuration updated successfully',
+    type: PppoeVlanResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'Configuration not found',
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description: 'New IP already exists',
+  })
+  async updatePppoeVlan(
+    @Param('id') id: string,
+    @Body() dto: UpdatePppoeVlanDto,
+  ) {
+    return this.pppoeVlanService.update(id, dto);
+  }
+
+  /**
+   * Delete PPPoE VLAN configuration
+   */
+  @Delete('pppoe-vlans/:id')
+  @ApiOperation({
+    summary: 'Delete PPPoE VLAN configuration',
+    description: 'Remove OLT IP to VLAN mapping.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Configuration deleted successfully',
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'Configuration not found',
+  })
+  async deletePppoeVlan(@Param('id') id: string) {
+    return this.pppoeVlanService.delete(id);
   }
 }
