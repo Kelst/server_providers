@@ -24,6 +24,7 @@ export enum ApiScope {
   USERSIDE = 'userside',
   ANALYTICS = 'analytics',
   SHARED = 'shared',
+  EQUIPMENT = 'equipment',
 }
 
 export interface ApiToken {
