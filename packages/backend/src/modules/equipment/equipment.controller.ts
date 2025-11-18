@@ -19,6 +19,10 @@ import {
   SignalLevelResponseDto,
   OnuDetailsRequestDto,
   OnuDetailsResponseDto,
+  OnuPortRebootRequestDto,
+  OnuPortRebootResponseDto,
+  OnuSetVlanRequestDto,
+  OnuSetVlanResponseDto,
   CreatePppoeVlanDto,
   UpdatePppoeVlanDto,
   PppoeVlanResponseDto,
@@ -188,6 +192,71 @@ export class EquipmentController {
   ): Promise<TelnetResponseDto<OnuDetailsResponseDto>> {
     const tokenId = req.user?.tokenId;
     return this.equipmentService.getOnuDetails(dto, tokenId);
+  }
+
+  /**
+   * Reboot ONU port (shutdown/no shutdown)
+   */
+  @Post('olt/onu-port-reboot')
+  @ApiOperation({
+    summary: 'Reboot ONU port (shutdown/no shutdown)',
+    description:
+      'Executes port shutdown and no shutdown commands with 1 second delay between them. ' +
+      'Checks ONU status first - ONU must be online to reboot. ' +
+      'Command sequence: enter config mode → shutdown port 1 → wait 1s → no shutdown port 1 → exit config mode.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Port reboot executed successfully',
+    type: TelnetResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid parameters or ONU is offline',
+  })
+  @ApiResponse({
+    status: HttpStatus.GATEWAY_TIMEOUT,
+    description: 'Telnet connection timeout',
+  })
+  async rebootOnuPort(
+    @Body() dto: OnuPortRebootRequestDto,
+    @Request() req: any,
+  ): Promise<TelnetResponseDto<OnuPortRebootResponseDto>> {
+    const tokenId = req.user?.tokenId;
+    return this.equipmentService.rebootOnuPort(dto, tokenId);
+  }
+
+  /**
+   * Set VLAN on ONU port
+   */
+  @Post('olt/onu-set-vlan')
+  @ApiOperation({
+    summary: 'Configure VLAN on ONU port',
+    description:
+      'Configures VLAN mode on ONU port. ' +
+      'Checks ONU status first - ONU must be online to configure VLAN. ' +
+      'Command sequence: enter config mode → interface → set VLAN mode tag → exit config mode. ' +
+      'VLAN ID must be in range 1-4094.',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'VLAN configured successfully',
+    type: TelnetResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid parameters, invalid VLAN ID, or ONU is offline',
+  })
+  @ApiResponse({
+    status: HttpStatus.GATEWAY_TIMEOUT,
+    description: 'Telnet connection timeout',
+  })
+  async setOnuVlan(
+    @Body() dto: OnuSetVlanRequestDto,
+    @Request() req: any,
+  ): Promise<TelnetResponseDto<OnuSetVlanResponseDto>> {
+    const tokenId = req.user?.tokenId;
+    return this.equipmentService.setOnuVlan(dto, tokenId);
   }
 
   // ==================== PPPoE VLAN Configuration Endpoints ====================

@@ -14,6 +14,10 @@ import {
   SignalLevelResponseDto,
   OnuDetailsRequestDto,
   OnuDetailsResponseDto,
+  OnuPortRebootRequestDto,
+  OnuPortRebootResponseDto,
+  OnuSetVlanRequestDto,
+  OnuSetVlanResponseDto,
 } from './dto';
 
 /**
@@ -558,6 +562,287 @@ export class EquipmentService {
       };
     } catch (error) {
       const executionTime = Date.now() - startTime;
+
+      return {
+        success: false,
+        executionTime,
+        timestamp: new Date().toISOString(),
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Reboot ONU port (shutdown/no shutdown)
+   *
+   * This method reboots an ONU port by executing a shutdown followed by no shutdown command.
+   * The sequence is:
+   * 1. Check if ONU is online (cannot reboot offline ONU)
+   * 2. Enter config mode
+   * 3. Execute shutdown on port 1
+   * 4. Wait 1 second (for port to stabilize)
+   * 5. Execute no shutdown on port 1
+   * 6. Exit config mode
+   *
+   * @param dto - ONU port reboot request DTO
+   * @param tokenId - API token ID for logging
+   * @returns Telnet response with reboot result
+   */
+  async rebootOnuPort(
+    dto: OnuPortRebootRequestDto,
+    tokenId: string
+  ): Promise<TelnetResponseDto<OnuPortRebootResponseDto>> {
+    const startTime = Date.now();
+
+    try {
+      // Parse interface parameter
+      const { port, onuId } = this.parseEponInterface(dto.interface);
+
+      this.logger.debug(`Rebooting ONU port for ${dto.interface} (port=${port}, onuId=${onuId})`);
+
+      // Step 1: Check ONU status first (must be online to reboot)
+      this.logger.debug('Checking ONU status before reboot...');
+      const statusResult = await this.getOnuStatus(
+        {
+          interface: dto.interface,
+          ip: dto.ip,
+          username: dto.username,
+          password: dto.password,
+          port: dto.port,
+          vendorType: dto.vendorType,
+        },
+        tokenId
+      );
+
+      // Check if status check failed
+      if (!statusResult.success) {
+        return {
+          success: false,
+          executionTime: Date.now() - startTime,
+          timestamp: new Date().toISOString(),
+          error: `Failed to check ONU status: ${statusResult.error}`,
+        };
+      }
+
+      // Check if ONU is online
+      const isOnline = statusResult.data?.status === 'online';
+      if (!isOnline) {
+        return {
+          success: false,
+          executionTime: Date.now() - startTime,
+          timestamp: new Date().toISOString(),
+          error: `ONU is ${statusResult.data?.status || 'offline'}. Cannot reboot offline ONU.`,
+        };
+      }
+
+      this.logger.debug('ONU is online, proceeding with reboot...');
+
+      // Step 2: Get vendor implementation
+      const vendor = this.vendorFactory.getVendor(dto.vendorType || 'bdcom');
+
+      // Check if vendor supports port reboot
+      if (!vendor.getOnuPortRebootCommands) {
+        return {
+          success: false,
+          executionTime: Date.now() - startTime,
+          timestamp: new Date().toISOString(),
+          error: `Vendor ${dto.vendorType || 'bdcom'} does not support ONU port reboot`,
+        };
+      }
+
+      // Step 3: Generate reboot commands
+      const commands = vendor.getOnuPortRebootCommands(port, onuId);
+
+      this.logger.debug(`Executing ${commands.length} reboot commands with 1000ms (1s) inter-command delay`);
+
+      // Step 4: Execute config commands with 1 second delay
+      const result = await this.telnetService.executeConfigCommands(
+        {
+          host: dto.ip,
+          username: dto.username,
+          password: dto.password,
+          port: dto.port,
+        },
+        commands,
+        {
+          interCommandDelay: 1000, // 1000ms (1 second) delay between commands for port to stabilize
+        }
+      );
+
+      const executionTime = Date.now() - startTime;
+
+      // Step 5: Log command execution (fire and forget)
+      this.logTelnetCommand(
+        tokenId,
+        dto.ip,
+        dto.username,
+        commands.join(' -> '),
+        result.output,
+        result.success ? 'SUCCESS' : 'FAILED',
+        result.error,
+        executionTime
+      ).catch((error) => {
+        this.logger.error('Failed to log telnet command:', error);
+      });
+
+      // Check if command execution failed
+      if (!result.success) {
+        return {
+          success: false,
+          executionTime,
+          timestamp: new Date().toISOString(),
+          error: result.error || 'Command execution failed',
+        };
+      }
+
+      // Step 6: Return success with detailed outputs
+      return {
+        success: true,
+        data: {
+          onuWasOnline: true,
+          commandOutputs: result.commandOutputs || [],
+          message: 'ONU port rebooted successfully',
+        },
+        executionTime,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+      this.logger.error(`Failed to reboot ONU port: ${error.message}`, error.stack);
+
+      return {
+        success: false,
+        executionTime,
+        timestamp: new Date().toISOString(),
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Set VLAN on ONU port
+   *
+   * This method configures VLAN on ONU port.
+   * The sequence is:
+   * 1. Check if ONU is online (cannot configure offline ONU)
+   * 2. Enter config mode
+   * 3. Execute VLAN configuration command
+   * 4. Exit config mode
+   *
+   * @param dto - ONU set VLAN request DTO
+   * @param tokenId - API token ID for logging
+   * @returns Telnet response with configuration result
+   */
+  async setOnuVlan(
+    dto: OnuSetVlanRequestDto,
+    tokenId: string
+  ): Promise<TelnetResponseDto<OnuSetVlanResponseDto>> {
+    const startTime = Date.now();
+
+    try {
+      // Parse interface parameter
+      const { port, onuId } = this.parseEponInterface(dto.interface);
+
+      this.logger.debug(`Setting VLAN ${dto.vlanId} for ONU ${dto.interface} (port=${port}, onuId=${onuId})`);
+
+      // Step 1: Check ONU status first (must be online to configure VLAN)
+      this.logger.debug('Checking ONU status before VLAN configuration...');
+      const statusResult = await this.getOnuStatus(
+        {
+          interface: dto.interface,
+          ip: dto.ip,
+          username: dto.username,
+          password: dto.password,
+          port: dto.port,
+          vendorType: dto.vendorType,
+        },
+        tokenId
+      );
+
+      // Check if status check failed
+      if (!statusResult.success) {
+        return {
+          success: false,
+          executionTime: Date.now() - startTime,
+          timestamp: new Date().toISOString(),
+          error: `Failed to check ONU status: ${statusResult.error}`,
+        };
+      }
+
+      // Check if ONU is online
+      const isOnline = statusResult.data?.status === 'online';
+      if (!isOnline) {
+        return {
+          success: false,
+          executionTime: Date.now() - startTime,
+          timestamp: new Date().toISOString(),
+          error: `ONU is ${statusResult.data?.status || 'offline'}. Cannot configure VLAN on offline ONU.`,
+        };
+      }
+
+      this.logger.debug('ONU is online, proceeding with VLAN configuration...');
+
+      // Step 2: Get vendor implementation
+      const vendor = this.vendorFactory.getVendor(dto.vendorType || 'bdcom');
+
+      // Check if vendor supports VLAN configuration
+      if (!vendor.getOnuSetVlanCommands) {
+        return {
+          success: false,
+          executionTime: Date.now() - startTime,
+          timestamp: new Date().toISOString(),
+          error: `Vendor ${dto.vendorType || 'bdcom'} does not support ONU VLAN configuration`,
+        };
+      }
+
+      // Step 3: Generate VLAN configuration commands
+      const commands = vendor.getOnuSetVlanCommands(port, onuId, dto.vlanId);
+
+      this.logger.debug(`Executing ${commands.length} VLAN configuration commands`);
+
+      // Step 4: Execute config commands (no delay needed for VLAN configuration)
+      const result = await this.telnetService.executeConfigCommands(
+        {
+          host: dto.ip,
+          username: dto.username,
+          password: dto.password,
+          port: dto.port,
+        },
+        commands
+      );
+
+      const executionTime = Date.now() - startTime;
+
+      // Step 5: Log command execution (fire and forget)
+      this.logTelnetCommand(
+        tokenId,
+        dto.ip,
+        dto.username,
+        `Set VLAN ${dto.vlanId} on ${dto.interface}`,
+        result.commandOutputs?.join('\n') || '',
+        result.success ? 'SUCCESS' : 'FAILED',
+        result.error,
+        executionTime
+      ).catch((error) => {
+        this.logger.error(`Failed to log telnet command: ${error.message}`);
+      });
+
+      this.logger.debug(`VLAN configuration completed in ${executionTime}ms`);
+
+      return {
+        success: true,
+        data: {
+          onuWasOnline: true,
+          vlanId: dto.vlanId,
+          commandOutputs: result.commandOutputs || [],
+          message: 'VLAN configured successfully',
+        },
+        executionTime,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+      this.logger.error(`Failed to set VLAN: ${error.message}`);
 
       return {
         success: false,

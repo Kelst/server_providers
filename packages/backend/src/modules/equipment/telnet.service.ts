@@ -390,6 +390,184 @@ export class TelnetService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Execute configuration commands with inter-command delays
+   *
+   * This method is designed for executing sequential configuration commands
+   * that require delays between execution (e.g., port shutdown/no shutdown).
+   *
+   * Flow:
+   * 1. Enter enable mode automatically
+   * 2. Execute each command in sequence
+   * 3. Wait interCommandDelay between commands
+   * 4. Collect output from all commands
+   * 5. Return aggregated result
+   *
+   * @param credentials - Device credentials
+   * @param commands - Array of commands to execute sequentially
+   * @param options - Execution options
+   * @returns Command result with aggregated output
+   */
+  async executeConfigCommands(
+    credentials: TelnetCredentials,
+    commands: string[],
+    options?: {
+      interCommandDelay?: number; // Delay between commands in ms (default: 0)
+      timeout?: number;            // Overall timeout in ms (default: from config)
+    }
+  ): Promise<TelnetCommandResult & { commandOutputs?: string[] }> {
+    const startTime = Date.now();
+    let connection;
+
+    // Default options
+    const interCommandDelay = options?.interCommandDelay ?? 0;
+    const timeoutMs = options?.timeout || this.telnetConfig.timeout;
+
+    try {
+      // Validate commands
+      if (!commands || commands.length === 0) {
+        throw new Error('Commands array cannot be empty');
+      }
+
+      this.logger.debug(
+        `Executing ${commands.length} config commands on ${credentials.host} with ${interCommandDelay}ms delay`
+      );
+
+      // Connection params
+      const telnetParams = {
+        port: credentials.port || this.telnetConfig.port,
+        timeout: 5000,
+        // Match all BDCOM prompts: user (>), enable (#), config (_config#), interface config (_config_epon#)
+        shellPrompt: /[a-zA-Z0-9_\-]+(_config)?(_epon[0-9\/\:]+)?[>#]\s*$/,
+        loginPrompt: /Username:/i,
+        passwordPrompt: /Password:/i,
+        negotiationMandatory: false,
+        irs: '\r\n',
+        ors: '\r',
+        echoLines: 0,
+        execTimeout: 3000,
+        sendTimeout: 1000,
+        pageBreak: '--More--',
+        debug: false,
+      };
+
+      // Acquire connection from pool
+      const acquireStart = Date.now();
+      connection = await this.pool.acquire(
+        credentials.host,
+        credentials.username,
+        credentials.password,
+        telnetParams
+      );
+      const acquireTime = Date.now() - acquireStart;
+      this.logger.debug(`Connection acquired in ${acquireTime}ms`);
+
+      // Send Enter to clear Welcome screen
+      this.logger.debug('Sending Enter to clear Welcome screen...');
+      try {
+        await connection.send('\r');
+        this.logger.debug('Welcome screen cleared');
+      } catch (error) {
+        this.logger.warn(`Failed to send Enter: ${error.message}`);
+      }
+
+      // Step 1: Enter enable mode (CRITICAL - must succeed!)
+      const enableStart = Date.now();
+      this.logger.debug('Executing enable command...');
+      try {
+        const enableOutput = await connection.exec('enable', {
+          timeout: 2000,
+          shellPrompt: /#\s*$/,  // Wait for # prompt specifically
+          ors: '\r',
+        });
+        const enableTime = Date.now() - enableStart;
+        this.logger.debug(`Enable mode activated (#) in ${enableTime}ms`);
+        this.logger.debug(`Enable output: ${enableOutput.substring(0, 200)}`);
+      } catch (error) {
+        this.logger.error(`Enable command failed: ${error.message}`);
+        throw new Error(`Failed to enter enable mode: ${error.message}. Config commands cannot be executed.`);
+      }
+
+      // Step 2: Execute commands sequentially with delays
+      const commandOutputs: string[] = [];
+      let aggregatedOutput = '';
+
+      for (let i = 0; i < commands.length; i++) {
+        const cmd = this.sanitizeCommand(commands[i]);
+        const cmdStart = Date.now();
+
+        this.logger.debug(`Executing command ${i + 1}/${commands.length}: ${cmd}`);
+
+        try {
+          const output = await connection.exec(cmd, {
+            timeout: 3000,
+            // Universal prompt: match user (>), enable (#), config (_config#), interface config (_config_epon0/8:15#)
+            shellPrompt: /[a-zA-Z0-9_\-]+(_config)?(_epon[0-9\/\:]+)?[>#]\s*$/,
+            ors: '\r',
+          });
+
+          const cmdTime = Date.now() - cmdStart;
+          this.logger.debug(`Command ${i + 1} executed in ${cmdTime}ms, output length: ${output.length} chars`);
+
+          commandOutputs.push(output);
+          aggregatedOutput += output;
+
+          // Add delay between commands (except after last command)
+          if (i < commands.length - 1 && interCommandDelay > 0) {
+            this.logger.debug(`Waiting ${interCommandDelay}ms before next command...`);
+            await new Promise(resolve => setTimeout(resolve, interCommandDelay));
+          }
+        } catch (error) {
+          this.logger.error(`Command ${i + 1} failed: ${error.message}`);
+          commandOutputs.push(`ERROR: ${error.message}`);
+          aggregatedOutput += `ERROR: ${error.message}\n`;
+          // Continue with remaining commands
+        }
+      }
+
+      const executionTime = Date.now() - startTime;
+
+      // Release connection back to pool
+      this.pool.release(connection);
+
+      // Truncate output if too large
+      const MAX_OUTPUT_SIZE = 10 * 1024;
+      const truncatedOutput =
+        aggregatedOutput.length > MAX_OUTPUT_SIZE
+          ? aggregatedOutput.substring(0, MAX_OUTPUT_SIZE) + '\n... [output truncated]'
+          : aggregatedOutput;
+
+      this.logger.debug(
+        `Config commands completed in ${executionTime}ms on ${credentials.host}`
+      );
+
+      return {
+        success: true,
+        output: truncatedOutput,
+        commandOutputs,
+        executionTime,
+      };
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+
+      this.logger.error(
+        `Config commands execution failed on ${credentials.host}: ${error.message}`
+      );
+
+      // Release connection on error
+      if (connection) {
+        this.pool.release(connection);
+      }
+
+      return {
+        success: false,
+        output: '',
+        executionTime,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
    * Execute multiple commands in sequence using a single connection
    *
    * @param credentials - Device credentials

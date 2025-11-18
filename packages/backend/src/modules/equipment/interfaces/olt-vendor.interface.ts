@@ -148,6 +148,31 @@ export interface IOltVendor {
    * @returns Port state data
    */
   parseOnuPortState?(rawOutput: string): PortStateData;
+
+  /**
+   * Get ONU port reboot commands
+   *
+   * Returns array of commands to reboot ONU port (shutdown/no shutdown sequence).
+   * Commands should enter config mode, execute shutdown, wait, execute no shutdown, and exit.
+   *
+   * @param port - PON port (e.g., '0/8')
+   * @param onuId - ONU ID (e.g., '15')
+   * @returns Array of commands to execute sequentially
+   */
+  getOnuPortRebootCommands?(port: string, onuId: string): string[];
+
+  /**
+   * Get ONU VLAN configuration commands
+   *
+   * Returns array of commands to configure VLAN on ONU port.
+   * Commands should enter config mode, enter interface, set VLAN mode, and exit.
+   *
+   * @param port - PON port (e.g., '0/8')
+   * @param onuId - ONU ID (e.g., '15')
+   * @param vlanId - VLAN ID to configure (1-4094)
+   * @returns Array of commands to execute sequentially
+   */
+  getOnuSetVlanCommands?(port: string, onuId: string, vlanId: number): string[];
 }
 
 /**

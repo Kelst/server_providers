@@ -789,4 +789,51 @@ export class BdcomVendor implements IOltVendor {
       };
     }
   }
+
+  /**
+   * Get ONU port reboot commands for BDCOM
+   *
+   * Generates commands to reboot ONU port by executing shutdown followed by no shutdown.
+   * This sequence is used to restart the ONU port without physically disconnecting it.
+   *
+   * Command sequence:
+   * 1. config - Enter config mode (BDCOM uses 'config', not 'configure terminal')
+   * 2. interface ePON {port}:{onuId} - Enter ONU interface config mode
+   * 3. epon onu port 1 ctc shutdown - Shutdown port 1
+   * 4. no epon onu port 1 ctc shutdown - Bring port 1 back up
+   * 5. exit - Exit interface config mode
+   * 6. exit - Exit config mode
+   *
+   * @param port - PON port (e.g., '0/8')
+   * @param onuId - ONU ID (e.g., '15')
+   * @returns Array of commands to execute sequentially
+   */
+  getOnuPortRebootCommands(port: string, onuId: string): string[] {
+    return [
+      'config',
+      `interface ePON ${port}:${onuId}`,
+      'epon onu port 1 ctc shutdown',
+      'no epon onu port 1 ctc shutdown',
+      'exit',
+      'exit',
+    ];
+  }
+
+  /**
+   * Get ONU VLAN configuration commands
+   *
+   * @param port - PON port (e.g., '0/8')
+   * @param onuId - ONU ID (e.g., '15')
+   * @param vlanId - VLAN ID to configure (1-4094)
+   * @returns Array of telnet commands to execute
+   */
+  getOnuSetVlanCommands(port: string, onuId: string, vlanId: number): string[] {
+    return [
+      'config',
+      `interface ePON ${port}:${onuId}`,
+      `epon onu port 1 ctc vlan mode tag ${vlanId}`,
+      'exit',
+      'exit',
+    ];
+  }
 }
