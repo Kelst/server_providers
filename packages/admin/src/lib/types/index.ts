@@ -25,6 +25,7 @@ export enum ApiScope {
   ANALYTICS = 'analytics',
   SHARED = 'shared',
   EQUIPMENT = 'equipment',
+  CABINET_INTELEKT = 'cabinet_intelekt',
 }
 
 export interface ApiToken {
@@ -105,6 +106,31 @@ export interface TokenEndpointStats {
 export interface EndpointsByToken {
   period: '24h' | '7d' | '30d';
   tokens: TokenEndpointStats[];
+}
+
+export interface RequestLog {
+  id: string;
+  tokenId: string;
+  tokenName?: string;
+  projectName?: string;
+  endpoint: string;
+  method: string;
+  statusCode: number;
+  responseTime: number;
+  ipAddress: string;
+  userAgent?: string;
+  requestPayload?: any;
+  responsePayload?: any;
+  errorMessage?: string;
+  createdAt: string;
+}
+
+export interface RequestLogsResponse {
+  requests: RequestLog[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
 export interface ErrorLog {

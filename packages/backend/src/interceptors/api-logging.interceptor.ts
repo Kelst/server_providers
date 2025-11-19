@@ -72,8 +72,8 @@ export class ApiLoggingInterceptor implements NestInterceptor {
           responseTime,
           ipAddress: request.ip || request.connection.remoteAddress || 'unknown',
           userAgent: request.headers['user-agent'] || null,
-          requestPayload: this.sanitizePayload(request.body),
-          responsePayload: error ? null : this.sanitizePayload(responseData),
+          requestPayload: this.limitPayloadSize(request.body),
+          responsePayload: error ? null : this.limitPayloadSize(responseData),
           errorMessage: error ? error.message : null,
         },
       });
@@ -84,102 +84,25 @@ export class ApiLoggingInterceptor implements NestInterceptor {
   }
 
   /**
-   * Sanitize payload to remove sensitive data and limit size
+   * Limit payload size to avoid storing too much data
+   * Admin can see all data including sensitive information
    */
-  private sanitizePayload(payload: any): any {
+  private limitPayloadSize(payload: any): any {
     if (!payload) return null;
 
-    // Sensitive field patterns (case-insensitive)
-    const sensitiveFields = [
-      'password',
-      'token',
-      'secret',
-      'apikey',
-      'api_key',
-      'authorization',
-      'auth',
-      'key',
-      'private',
-      'passwordHash',
-      'password_hash',
-      'credit_card',
-      'creditCard',
-      'cvv',
-      'ssn',
-    ];
+    // Convert to JSON string to check size
+    const payloadString = JSON.stringify(payload);
 
-    // Deep clone to avoid mutating original
-    let sanitized = this.deepClone(payload);
-
-    // Recursively sanitize object
-    sanitized = this.sanitizeObject(sanitized, sensitiveFields);
-
-    // Limit payload size to avoid storing too much data
-    const payloadString = JSON.stringify(sanitized);
-    if (payloadString.length > 10000) {
+    // Limit to 50KB to avoid database issues with very large payloads
+    if (payloadString.length > 50000) {
       return {
         truncated: true,
-        size: payloadString.length,
-        preview: JSON.parse(payloadString.substring(0, 1000))
+        originalSize: payloadString.length,
+        message: 'Payload too large, showing preview only',
+        preview: JSON.parse(payloadString.substring(0, 10000))
       };
     }
 
-    return sanitized;
-  }
-
-  /**
-   * Deep clone object
-   */
-  private deepClone(obj: any): any {
-    if (obj === null || typeof obj !== 'object') return obj;
-    if (obj instanceof Date) return new Date(obj);
-    if (obj instanceof Array) return obj.map(item => this.deepClone(item));
-
-    const cloned: any = {};
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        cloned[key] = this.deepClone(obj[key]);
-      }
-    }
-    return cloned;
-  }
-
-  /**
-   * Recursively sanitize object by masking sensitive fields
-   */
-  private sanitizeObject(obj: any, sensitiveFields: string[]): any {
-    if (obj === null || typeof obj !== 'object') return obj;
-
-    if (obj instanceof Array) {
-      return obj.map(item => this.sanitizeObject(item, sensitiveFields));
-    }
-
-    const sanitized: any = {};
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        const lowerKey = key.toLowerCase();
-
-        // Check if key matches sensitive field
-        const isSensitive = sensitiveFields.some(field =>
-          lowerKey.includes(field.toLowerCase())
-        );
-
-        if (isSensitive) {
-          // Mask sensitive value
-          const value = obj[key];
-          if (typeof value === 'string' && value.length > 0) {
-            sanitized[key] = '***REDACTED***';
-          } else {
-            sanitized[key] = '***';
-          }
-        } else if (typeof obj[key] === 'object') {
-          // Recursively sanitize nested objects
-          sanitized[key] = this.sanitizeObject(obj[key], sensitiveFields);
-        } else {
-          sanitized[key] = obj[key];
-        }
-      }
-    }
-    return sanitized;
+    return payload;
   }
 }

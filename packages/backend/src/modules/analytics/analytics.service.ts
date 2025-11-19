@@ -1210,4 +1210,96 @@ export class AnalyticsService {
       timestamp: new Date().toISOString(),
     };
   }
+
+  /**
+   * Get detailed request logs with pagination and filters
+   */
+  async getRequestLogs(adminId: string, filters: {
+    tokenId?: string;
+    endpoint?: string;
+    method?: string;
+    statusCode?: number;
+    page?: number;
+    limit?: number;
+    period?: string;
+  }) {
+    const {
+      tokenId,
+      endpoint,
+      method,
+      statusCode,
+      page = 1,
+      limit = 50,
+      period = '24h',
+    } = filters;
+
+    // Calculate time range
+    let hours = 24;
+    if (period === '1h') hours = 1;
+    else if (period === '24h') hours = 24;
+    else if (period === '7d') hours = 24 * 7;
+    else if (period === '30d') hours = 24 * 30;
+
+    const startDate = new Date();
+    startDate.setHours(startDate.getHours() - hours);
+
+    // Build where clause
+    const where: any = {
+      createdAt: { gte: startDate },
+      token: {
+        user: {
+          id: adminId,
+        },
+      },
+    };
+
+    if (tokenId) where.tokenId = tokenId;
+    if (endpoint) where.endpoint = { contains: endpoint };
+    if (method) where.method = method;
+    if (statusCode) where.statusCode = statusCode;
+
+    // Get total count
+    const total = await this.prisma.apiRequest.count({ where });
+
+    // Get paginated requests
+    const requests = await this.prisma.apiRequest.findMany({
+      where,
+      include: {
+        token: {
+          select: {
+            id: true,
+            projectName: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    return {
+      requests: requests.map((req) => ({
+        id: req.id,
+        tokenId: req.tokenId,
+        tokenName: req.token?.projectName,
+        projectName: req.token?.projectName,
+        endpoint: req.endpoint,
+        method: req.method,
+        statusCode: req.statusCode,
+        responseTime: req.responseTime,
+        ipAddress: req.ipAddress,
+        userAgent: req.userAgent,
+        requestPayload: req.requestPayload,
+        responsePayload: req.responsePayload,
+        errorMessage: req.errorMessage,
+        createdAt: req.createdAt,
+      })),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
 }

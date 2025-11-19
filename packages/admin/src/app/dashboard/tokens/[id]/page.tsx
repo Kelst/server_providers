@@ -27,6 +27,7 @@ const SCOPES = [
   { value: ApiScope.ANALYTICS, label: 'Analytics', description: 'Access analytics endpoints' },
   { value: ApiScope.SHARED, label: 'Shared', description: 'Access shared API endpoints' },
   { value: ApiScope.EQUIPMENT, label: 'Equipment', description: 'Access equipment endpoints' },
+  { value: ApiScope.CABINET_INTELEKT, label: 'Cabinet Intelekt', description: 'Access cabinet intelekt (provider info) endpoints' },
 ];
 
 export default function TokenDetailsPage() {

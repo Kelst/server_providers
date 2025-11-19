@@ -7,6 +7,10 @@ import {
   EndpointsByTokenResponseDto,
   AnalyticsPeriod,
 } from './dto/endpoints-by-token.dto';
+import {
+  GetRequestLogsQueryDto,
+  RequestLogsResponseDto,
+} from './dto/request-logs.dto';
 
 @ApiTags('analytics')
 @ApiBearerAuth('JWT-auth')
@@ -244,5 +248,26 @@ export class AnalyticsController {
   })
   invalidateCache(@Body('pattern') pattern: string) {
     return this.analyticsService.invalidateCachePattern(pattern);
+  }
+
+  @Get('requests')
+  @ApiOperation({
+    summary: 'Get detailed request logs',
+    description: 'Retrieve detailed request logs with pagination, filtering, and all request/response data'
+  })
+  @ApiQuery({ name: 'tokenId', required: false, description: 'Filter by token ID' })
+  @ApiQuery({ name: 'endpoint', required: false, description: 'Filter by endpoint (partial match)' })
+  @ApiQuery({ name: 'method', required: false, description: 'Filter by HTTP method' })
+  @ApiQuery({ name: 'statusCode', required: false, type: Number, description: 'Filter by status code' })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 50, max: 100)' })
+  @ApiQuery({ name: 'period', required: false, enum: ['1h', '24h', '7d', '30d'], description: 'Time period (default: 24h)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Request logs retrieved successfully',
+    type: RequestLogsResponseDto,
+  })
+  getRequestLogs(@Request() req, @Query() query: GetRequestLogsQueryDto) {
+    return this.analyticsService.getRequestLogs(req.user.id, query);
   }
 }

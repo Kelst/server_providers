@@ -45,9 +45,10 @@ const SCOPE_COLORS: Record<ApiScope, string> = {
   [ApiScope.ANALYTICS]: 'bg-purple-100 text-purple-800 border-purple-200',
   [ApiScope.SHARED]: 'bg-orange-100 text-orange-800 border-orange-200',
   [ApiScope.EQUIPMENT]: 'bg-teal-100 text-teal-800 border-teal-200',
+  [ApiScope.CABINET_INTELEKT]: 'bg-pink-100 text-pink-800 border-pink-200',
 };
 
-const ALL_SCOPES: ApiScope[] = [ApiScope.BILLING, ApiScope.USERSIDE, ApiScope.ANALYTICS, ApiScope.SHARED, ApiScope.EQUIPMENT];
+const ALL_SCOPES: ApiScope[] = [ApiScope.BILLING, ApiScope.USERSIDE, ApiScope.ANALYTICS, ApiScope.SHARED, ApiScope.EQUIPMENT, ApiScope.CABINET_INTELEKT];
 
 export default function TokensPage() {
   const router = useRouter();

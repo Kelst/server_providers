@@ -10,6 +10,7 @@ export enum ApiScope {
   ANALYTICS = 'analytics',
   SHARED = 'shared',
   EQUIPMENT = 'equipment',
+  CABINET_INTELEKT = 'cabinet_intelekt',
 }
 
 /**
@@ -26,4 +27,5 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
   [ApiScope.ANALYTICS]: 'Access to analytics endpoints',
   [ApiScope.SHARED]: 'Access to shared API endpoints',
   [ApiScope.EQUIPMENT]: 'Access to equipment SNMP monitoring endpoints',
+  [ApiScope.CABINET_INTELEKT]: 'Access to cabinet intelekt (provider info) endpoints',
 };

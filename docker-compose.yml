@@ -46,6 +46,8 @@ services:
       dockerfile: ./packages/backend/Dockerfile
       target: production
     restart: unless-stopped
+    volumes:
+      - ./uploads:/app/packages/backend/uploads
     environment:
       NODE_ENV: production
       PORT: 3000

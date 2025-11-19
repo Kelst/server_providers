@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 
 import { DatabaseModule } from './modules/database/database.module';
@@ -13,6 +15,7 @@ import { SharedApiModule } from './modules/shared-api/shared-api.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { UsersideModule } from './modules/userside/userside.module';
 import { EquipmentModule } from './modules/equipment/equipment.module';
+import { CabinetIntelektModule } from './modules/cabinet-intelekt/cabinet-intelekt.module';
 import { HealthModule } from './modules/health/health.module';
 import { WebSocketModule } from './modules/websocket/websocket.module';
 import { SettingsModule } from './modules/settings/settings.module';
@@ -33,6 +36,10 @@ import validationSchema from './config/validation.schema';
       validationSchema,
     }),
     ScheduleModule.forRoot(),
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'uploads'),
+      serveRoot: '/uploads',
+    }),
     DatabaseModule,
     CacheModule, // Global cache service for Redis caching
     CommonModule,
@@ -44,6 +51,7 @@ import validationSchema from './config/validation.schema';
     BillingModule,
     UsersideModule,
     EquipmentModule,
+    CabinetIntelektModule,
     HealthModule,
     WebSocketModule,
     SettingsModule,

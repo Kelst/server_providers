@@ -12,7 +12,8 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, Eye } from 'lucide-react';
+import { RequestDetailsDialog } from '@/components/analytics/RequestDetailsDialog';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
@@ -30,6 +31,9 @@ export default function AnalyticsPage() {
   const [endpointsPeriod, setEndpointsPeriod] = useState<'24h' | '7d' | '30d'>('24h');
   const [selectedTokenFilter, setSelectedTokenFilter] = useState<string>('all');
   const [expandedTokens, setExpandedTokens] = useState<Set<string>>(new Set());
+
+  // Request details dialog state
+  const [selectedEndpoint, setSelectedEndpoint] = useState<{ endpoint: string; method: string } | null>(null);
 
   useEffect(() => {
     loadAnalyticsData();
@@ -290,6 +294,7 @@ export default function AnalyticsPage() {
                                 <TableHead className="text-right">Requests</TableHead>
                                 <TableHead className="text-right">Success Rate</TableHead>
                                 <TableHead className="text-right">Avg Time</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -319,6 +324,15 @@ export default function AnalyticsPage() {
                                   </TableCell>
                                   <TableCell className="text-right">
                                     {endpoint.avgResponseTime}ms
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setSelectedEndpoint({ endpoint: endpoint.endpoint, method: endpoint.method })}
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                    </Button>
                                   </TableCell>
                                 </TableRow>
                               ))}
@@ -492,6 +506,16 @@ export default function AnalyticsPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Request Details Dialog */}
+      {selectedEndpoint && (
+        <RequestDetailsDialog
+          open={!!selectedEndpoint}
+          onOpenChange={(open) => !open && setSelectedEndpoint(null)}
+          endpoint={selectedEndpoint.endpoint}
+          method={selectedEndpoint.method}
+        />
+      )}
     </div>
   );
 }

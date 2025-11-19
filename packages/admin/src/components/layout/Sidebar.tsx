@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, Key, BarChart3, FileText, LogOut, Activity, Shield, Heart, Settings, Bell } from 'lucide-react';
+import { LayoutDashboard, Key, BarChart3, FileText, LogOut, Activity, Shield, Heart, Settings, Bell, Building2 } from 'lucide-react';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { Button } from '@/components/ui/button';
 
@@ -16,6 +16,7 @@ const navigation = [
   { name: 'Alert Rules', href: '/dashboard/alerts/rules', icon: Bell },
   { name: 'Alerts History', href: '/dashboard/alerts/history', icon: FileText },
   { name: 'Audit Logs', href: '/dashboard/audit-logs', icon: FileText },
+  { name: 'Cabinet Intelekt', href: '/dashboard/cabinet-intelekt', icon: Building2 },
   { name: 'System Health', href: '/dashboard/health', icon: Heart },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ];

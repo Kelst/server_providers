@@ -8,6 +8,7 @@ import type {
   RateLimitStats,
   AuditLogResponse,
   EndpointsByToken,
+  RequestLogsResponse,
 } from '../types';
 import type {
   CacheStats,
@@ -124,6 +125,22 @@ export const analyticsApi = {
       '/analytics/cache/invalidate',
       { pattern }
     );
+    return data;
+  },
+
+  // Request Logs
+  async getRequestLogs(params: {
+    tokenId?: string;
+    endpoint?: string;
+    method?: string;
+    statusCode?: number;
+    page?: number;
+    limit?: number;
+    period?: '1h' | '24h' | '7d' | '30d';
+  }): Promise<RequestLogsResponse> {
+    const { data } = await apiClient.get<RequestLogsResponse>('/analytics/requests', {
+      params,
+    });
     return data;
   },
 };

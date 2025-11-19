@@ -28,6 +28,7 @@ model User {
   endpointRules       EndpointRule[]
   settings            AdminSettings?
   alertRules          AlertRule[]
+  providerInfoAuditLogs ProviderInfoAuditLog[]
 
   @@map("users")
 }
@@ -559,5 +560,143 @@ model PppoeVlanConfig {
   @@index([vlanId])
   @@index([tokenId])
   @@map("pppoe_vlan_configs")
+}
+
+// ======================================
+// Cabinet Intelekt Module
+// ======================================
+
+// Provider Information (загальна інформація про провайдера)
+model ProviderInfo {
+  id               String   @id @default(uuid())
+  companyName      String   @map("company_name")
+  description      String?  @db.Text
+  logoUrl          String?  @map("logo_url") @db.Text
+  website          String?  @db.VarChar(500)
+  telegramBot      String?  @map("telegram_bot") @db.VarChar(500)
+
+  // Working hours
+  workingHours     String?  @map("working_hours") @db.Text // JSON or plain text (e.g., "Mon-Fri: 9:00-18:00")
+
+  // Office Address
+  addressStreet    String?  @map("address_street")
+  addressCity      String?  @map("address_city")
+  addressPostal    String?  @map("address_postal") @db.VarChar(20)
+  addressCountry   String?  @map("address_country") @db.VarChar(100)
+
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  phones           ProviderPhone[]
+  emails           ProviderEmail[]
+  socialMedia      ProviderSocialMedia[]
+  auditLogs        ProviderInfoAuditLog[]
+
+  @@map("provider_info")
+}
+
+// Provider Phone Numbers (телефони провайдера)
+model ProviderPhone {
+  id          String            @id @default(uuid())
+  providerId  String            @map("provider_id")
+  phoneNumber String            @map("phone_number") @db.VarChar(20)
+  type        ProviderPhoneType
+  label       String?           // Додаткова назва (e.g., "Головний офіс Київ")
+  isPrimary   Boolean           @default(false) @map("is_primary") // Головний номер
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  provider    ProviderInfo      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@index([type])
+  @@map("provider_phones")
+}
+
+enum ProviderPhoneType {
+  MAIN      // Головний
+  SUPPORT   // Підтримка
+  SALES     // Відділ продажів
+  TECHNICAL // Технічна підтримка
+  OTHER     // Інше
+}
+
+// Provider Email Addresses (email адреси провайдера)
+model ProviderEmail {
+  id         String            @id @default(uuid())
+  providerId String            @map("provider_id")
+  email      String            @db.VarChar(255)
+  type       ProviderEmailType
+  label      String?           // Додаткова назва
+  isPrimary  Boolean           @default(false) @map("is_primary") // Головний email
+  createdAt  DateTime          @default(now()) @map("created_at")
+  updatedAt  DateTime          @updatedAt @map("updated_at")
+
+  provider   ProviderInfo      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@index([type])
+  @@map("provider_emails")
+}
+
+enum ProviderEmailType {
+  GENERAL   // Загальний
+  SUPPORT   // Підтримка
+  SALES     // Продажі
+  TECHNICAL // Технічна підтримка
+  OTHER     // Інше
+}
+
+// Provider Social Media (соціальні мережі провайдера)
+model ProviderSocialMedia {
+  id         String                 @id @default(uuid())
+  providerId String                 @map("provider_id")
+  platform   ProviderSocialPlatform
+  url        String                 @db.VarChar(500)
+  label      String?                // Додаткова назва
+  createdAt  DateTime               @default(now()) @map("created_at")
+  updatedAt  DateTime               @updatedAt @map("updated_at")
+
+  provider   ProviderInfo           @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@index([platform])
+  @@map("provider_social_media")
+}
+
+enum ProviderSocialPlatform {
+  FACEBOOK
+  INSTAGRAM
+  YOUTUBE
+  TWITTER
+  LINKEDIN
+  TELEGRAM
+  VIBER
+  TIKTOK
+  OTHER
+}
+
+// Provider Info Audit Log (історія змін налаштувань провайдера)
+model ProviderInfoAuditLog {
+  id         String       @id @default(uuid())
+  providerId String?      @map("provider_id") // nullable for deletion tracking
+  adminId    String       @map("admin_id")
+  action     String       // 'created', 'updated', 'deleted', 'logo_uploaded', 'logo_deleted'
+  entityType String       @map("entity_type") // 'info', 'phone', 'email', 'social'
+  entityId   String?      @map("entity_id") // ID of changed entity (phone, email, social)
+  changes    Json?        // Що саме змінилось (old value -> new value)
+  ipAddress  String       @map("ip_address") @db.VarChar(45)
+  userAgent  String?      @map("user_agent") @db.Text
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  provider   ProviderInfo? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  admin      User         @relation(fields: [adminId], references: [id])
+
+  @@index([providerId])
+  @@index([adminId])
+  @@index([createdAt])
+  @@index([action])
+  @@index([entityType])
+  @@map("provider_info_audit_log")
 }
 
