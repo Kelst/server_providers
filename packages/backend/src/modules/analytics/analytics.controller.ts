@@ -252,9 +252,11 @@ export class AnalyticsController {
 
   @Get('requests')
   @ApiOperation({
-    summary: 'Get detailed request logs',
-    description: 'Retrieve detailed request logs with pagination, filtering, and all request/response data'
+    summary: 'Get detailed request logs with advanced search',
+    description: 'Retrieve detailed request logs with pagination, filtering, JSON field search, and all request/response data'
   })
+  @ApiQuery({ name: 'searchTerm', required: false, description: 'Global search term (searches in JSON, endpoint, IP)', example: 'vlad_b_1' })
+  @ApiQuery({ name: 'ipAddress', required: false, description: 'Filter by IP address', example: '192.168.1.1' })
   @ApiQuery({ name: 'tokenId', required: false, description: 'Filter by token ID' })
   @ApiQuery({ name: 'endpoint', required: false, description: 'Filter by endpoint (partial match)' })
   @ApiQuery({ name: 'method', required: false, description: 'Filter by HTTP method' })

@@ -1,8 +1,38 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsInt, Min, Max, IsIn } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, Max, IsIn, IsEnum, ValidateNested, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 
+export class JsonFieldFilterDto {
+  @ApiProperty({ description: 'JSON field path (e.g., "login", "uid", "data.user.phone")', example: 'login' })
+  @IsString()
+  fieldPath: string;
+
+  @ApiProperty({ description: 'Filter operator', enum: ['equals', 'contains', 'gt', 'lt', 'gte', 'lte'], example: 'equals' })
+  @IsEnum(['equals', 'contains', 'gt', 'lt', 'gte', 'lte'])
+  operator: string;
+
+  @ApiProperty({ description: 'Value to filter by', example: 'vlad_b_1' })
+  @IsString()
+  value: string;
+}
+
 export class GetRequestLogsQueryDto {
+  @ApiPropertyOptional({ description: 'Global search term (searches across all JSON fields, endpoint, IP)', example: 'vlad_b_1' })
+  @IsOptional()
+  @IsString()
+  searchTerm?: string;
+
+  @ApiPropertyOptional({ description: 'IP address to filter by', example: '192.168.1.1' })
+  @IsOptional()
+  @IsString()
+  ipAddress?: string;
+
+  @ApiPropertyOptional({ description: 'JSON field filters', type: [JsonFieldFilterDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => JsonFieldFilterDto)
+  jsonFilters?: JsonFieldFilterDto[];
   @ApiPropertyOptional({ description: 'Token ID to filter by' })
   @IsOptional()
   @IsString()

@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import { RequestDetailsDialog } from '@/components/analytics/RequestDetailsDialog';
+import { RequestSearchPage } from '@/components/analytics/RequestSearchPage';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
@@ -114,9 +115,10 @@ export default function AnalyticsPage() {
 
       <div className="flex-1 p-6 overflow-y-auto space-y-6">
         <Tabs defaultValue="requests" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="requests">Requests</TabsTrigger>
             <TabsTrigger value="endpoints">Endpoints</TabsTrigger>
+            <TabsTrigger value="search">Search Logs</TabsTrigger>
             <TabsTrigger value="errors">Errors</TabsTrigger>
             <TabsTrigger value="rate-limits">Rate Limits</TabsTrigger>
           </TabsList>
@@ -355,6 +357,11 @@ export default function AnalyticsPage() {
             )}
           </TabsContent>
 
+          {/* Search Logs Tab */}
+          <TabsContent value="search" className="space-y-4 mt-4">
+            <RequestSearchPage />
+          </TabsContent>
+
           {/* Errors Tab */}
           <TabsContent value="errors" className="space-y-4 mt-4">
             <Card>
@@ -374,6 +381,7 @@ export default function AnalyticsPage() {
                         <TableHead>Status</TableHead>
                         <TableHead>Message</TableHead>
                         <TableHead>Time</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -389,6 +397,15 @@ export default function AnalyticsPage() {
                           <TableCell className="max-w-xs truncate">{error.message}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">
                             {format(new Date(error.timestamp), 'PPp')}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setSelectedEndpoint({ endpoint: error.endpoint, method: error.method })}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}

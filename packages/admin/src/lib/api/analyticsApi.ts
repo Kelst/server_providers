@@ -130,6 +130,8 @@ export const analyticsApi = {
 
   // Request Logs
   async getRequestLogs(params: {
+    searchTerm?: string;
+    ipAddress?: string;
     tokenId?: string;
     endpoint?: string;
     method?: string;

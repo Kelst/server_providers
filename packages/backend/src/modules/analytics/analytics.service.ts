@@ -1212,9 +1212,12 @@ export class AnalyticsService {
   }
 
   /**
-   * Get detailed request logs with pagination and filters
+   * Get detailed request logs with pagination and filters including JSON search
    */
   async getRequestLogs(adminId: string, filters: {
+    searchTerm?: string;
+    ipAddress?: string;
+    jsonFilters?: Array<{ fieldPath: string; operator: string; value: string }>;
     tokenId?: string;
     endpoint?: string;
     method?: string;
@@ -1224,6 +1227,9 @@ export class AnalyticsService {
     period?: string;
   }) {
     const {
+      searchTerm,
+      ipAddress,
+      jsonFilters,
       tokenId,
       endpoint,
       method,
@@ -1243,7 +1249,23 @@ export class AnalyticsService {
     const startDate = new Date();
     startDate.setHours(startDate.getHours() - hours);
 
-    // Build where clause
+    // If we have searchTerm or jsonFilters, use raw SQL for better JSON search performance
+    if (searchTerm || jsonFilters?.length) {
+      return this.searchRequestLogsWithJSON(adminId, {
+        searchTerm,
+        ipAddress,
+        jsonFilters,
+        tokenId,
+        endpoint,
+        method,
+        statusCode,
+        page,
+        limit,
+        startDate,
+      });
+    }
+
+    // Standard Prisma query for simple filters
     const where: any = {
       createdAt: { gte: startDate },
       token: {
@@ -1257,6 +1279,7 @@ export class AnalyticsService {
     if (endpoint) where.endpoint = { contains: endpoint };
     if (method) where.method = method;
     if (statusCode) where.statusCode = statusCode;
+    if (ipAddress) where.ipAddress = { contains: ipAddress };
 
     // Get total count
     const total = await this.prisma.apiRequest.count({ where });
@@ -1295,6 +1318,196 @@ export class AnalyticsService {
         responsePayload: req.responsePayload,
         errorMessage: req.errorMessage,
         createdAt: req.createdAt,
+      })),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
+   * Search request logs using PostgreSQL JSON operators for advanced filtering
+   */
+  private async searchRequestLogsWithJSON(adminId: string, params: {
+    searchTerm?: string;
+    ipAddress?: string;
+    jsonFilters?: Array<{ fieldPath: string; operator: string; value: string }>;
+    tokenId?: string;
+    endpoint?: string;
+    method?: string;
+    statusCode?: number;
+    page: number;
+    limit: number;
+    startDate: Date;
+  }) {
+    const {
+      searchTerm,
+      ipAddress,
+      jsonFilters,
+      tokenId,
+      endpoint,
+      method,
+      statusCode,
+      page,
+      limit,
+      startDate,
+    } = params;
+
+    // Build SQL WHERE conditions
+    const conditions: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    // Date filter
+    conditions.push(`ar.created_at >= $${paramIndex}`);
+    values.push(startDate);
+    paramIndex++;
+
+    // Admin filter (only their tokens)
+    conditions.push(`at.created_by = $${paramIndex}`);
+    values.push(adminId);
+    paramIndex++;
+
+    // Global search term (searches in JSON payloads, endpoint, IP)
+    if (searchTerm) {
+      conditions.push(`(
+        ar.request_payload::text ILIKE $${paramIndex}
+        OR ar.response_payload::text ILIKE $${paramIndex}
+        OR ar.endpoint ILIKE $${paramIndex}
+        OR ar.ip_address ILIKE $${paramIndex}
+      )`);
+      values.push(`%${searchTerm}%`);
+      paramIndex++;
+    }
+
+    // IP address filter
+    if (ipAddress) {
+      conditions.push(`ar.ip_address ILIKE $${paramIndex}`);
+      values.push(`%${ipAddress}%`);
+      paramIndex++;
+    }
+
+    // JSON field filters
+    if (jsonFilters && jsonFilters.length > 0) {
+      for (const filter of jsonFilters) {
+        const { fieldPath, operator, value } = filter;
+
+        // Build JSON path (support nested paths like "data.user.phone")
+        const pathParts = fieldPath.split('.');
+        const jsonPath = pathParts.map(p => `'${p}'`).join(',');
+
+        switch (operator) {
+          case 'equals':
+            conditions.push(`(
+              jsonb_extract_path_text(ar.request_payload, ${jsonPath}) = $${paramIndex}
+              OR jsonb_extract_path_text(ar.response_payload, ${jsonPath}) = $${paramIndex}
+            )`);
+            values.push(value);
+            paramIndex++;
+            break;
+
+          case 'contains':
+            conditions.push(`(
+              jsonb_extract_path_text(ar.request_payload, ${jsonPath}) ILIKE $${paramIndex}
+              OR jsonb_extract_path_text(ar.response_payload, ${jsonPath}) ILIKE $${paramIndex}
+            )`);
+            values.push(`%${value}%`);
+            paramIndex++;
+            break;
+
+          case 'gt':
+          case 'gte':
+          case 'lt':
+          case 'lte':
+            const pgOperator = operator === 'gt' ? '>' : operator === 'gte' ? '>=' : operator === 'lt' ? '<' : '<=';
+            conditions.push(`(
+              (jsonb_extract_path_text(ar.request_payload, ${jsonPath}))::numeric ${pgOperator} $${paramIndex}::numeric
+              OR (jsonb_extract_path_text(ar.response_payload, ${jsonPath}))::numeric ${pgOperator} $${paramIndex}::numeric
+            )`);
+            values.push(value);
+            paramIndex++;
+            break;
+        }
+      }
+    }
+
+    // Standard filters
+    if (tokenId) {
+      conditions.push(`ar.token_id = $${paramIndex}`);
+      values.push(tokenId);
+      paramIndex++;
+    }
+
+    if (endpoint) {
+      conditions.push(`ar.endpoint ILIKE $${paramIndex}`);
+      values.push(`%${endpoint}%`);
+      paramIndex++;
+    }
+
+    if (method) {
+      conditions.push(`ar.method = $${paramIndex}`);
+      values.push(method);
+      paramIndex++;
+    }
+
+    if (statusCode) {
+      conditions.push(`ar.status_code = $${paramIndex}`);
+      values.push(statusCode);
+      paramIndex++;
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    // Get total count
+    const countQuery = `
+      SELECT COUNT(*)::int as count
+      FROM api_requests ar
+      JOIN api_tokens at ON ar.token_id = at.id
+      WHERE ${whereClause}
+    `;
+
+    const countResult = await this.prisma.$queryRawUnsafe<Array<{ count: number }>>(
+      countQuery,
+      ...values
+    );
+    const total = countResult[0]?.count || 0;
+
+    // Get paginated results
+    const offset = (page - 1) * limit;
+    const dataQuery = `
+      SELECT
+        ar.id,
+        ar.token_id as "tokenId",
+        at.project_name as "projectName",
+        ar.endpoint,
+        ar.method,
+        ar.status_code as "statusCode",
+        ar.response_time as "responseTime",
+        ar.ip_address as "ipAddress",
+        ar.user_agent as "userAgent",
+        ar.request_payload as "requestPayload",
+        ar.response_payload as "responsePayload",
+        ar.error_message as "errorMessage",
+        ar.created_at as "createdAt"
+      FROM api_requests ar
+      JOIN api_tokens at ON ar.token_id = at.id
+      WHERE ${whereClause}
+      ORDER BY ar.created_at DESC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+
+    values.push(limit, offset);
+
+    const requests = await this.prisma.$queryRawUnsafe<any[]>(
+      dataQuery,
+      ...values
+    );
+
+    return {
+      requests: requests.map((req) => ({
+        ...req,
+        tokenName: req.projectName,
       })),
       total,
       page,
