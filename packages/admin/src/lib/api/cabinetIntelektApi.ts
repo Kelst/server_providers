@@ -1,6 +1,8 @@
 import { apiClient } from './client';
 
 // Types
+export type ProviderPhoneType = 'MAIN' | 'SUPPORT' | 'SALES' | 'TECHNICAL' | 'OTHER';
+
 export interface ProviderInfo {
   id: string;
   companyName: string;
@@ -24,26 +26,32 @@ export interface ProviderPhone {
   id: string;
   providerId: string;
   phoneNumber: string;
+  type: ProviderPhoneType;
   label?: string;
   isPrimary: boolean;
   createdAt: string;
   updatedAt: string;
 }
+
+export type ProviderEmailType = 'GENERAL' | 'SUPPORT' | 'SALES' | 'TECHNICAL' | 'OTHER';
 
 export interface ProviderEmail {
   id: string;
   providerId: string;
   email: string;
+  type: ProviderEmailType;
   label?: string;
   isPrimary: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
+export type ProviderSocialPlatform = 'FACEBOOK' | 'INSTAGRAM' | 'YOUTUBE' | 'TWITTER' | 'LINKEDIN' | 'TELEGRAM' | 'VIBER' | 'TIKTOK' | 'OTHER';
+
 export interface ProviderSocialMedia {
   id: string;
   providerId: string;
-  platform: string;
+  platform: ProviderSocialPlatform;
   url: string;
   label?: string;
   createdAt: string;
@@ -94,36 +102,40 @@ export interface UpdateProviderInfoRequest {
 
 export interface CreatePhoneRequest {
   phoneNumber: string;
+  type: ProviderPhoneType;
   label?: string;
   isPrimary?: boolean;
 }
 
 export interface UpdatePhoneRequest {
   phoneNumber?: string;
+  type?: ProviderPhoneType;
   label?: string;
   isPrimary?: boolean;
 }
 
 export interface CreateEmailRequest {
   email: string;
+  type: ProviderEmailType;
   label?: string;
   isPrimary?: boolean;
 }
 
 export interface UpdateEmailRequest {
   email?: string;
+  type?: ProviderEmailType;
   label?: string;
   isPrimary?: boolean;
 }
 
 export interface CreateSocialMediaRequest {
-  platform: string;
+  platform: ProviderSocialPlatform;
   url: string;
   label?: string;
 }
 
 export interface UpdateSocialMediaRequest {
-  platform?: string;
+  platform?: ProviderSocialPlatform;
   url?: string;
   label?: string;
 }

@@ -12,16 +12,16 @@ import { Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, isLoading, error, clearError, isAuthenticated } = useAuthStore();
+  const { login, isLoading, error, clearError, isAuthenticated, _hasHydrated } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   useEffect(() => {
-    // If already authenticated, redirect to dashboard
-    if (isAuthenticated) {
+    // If already authenticated, redirect to dashboard (only after hydration)
+    if (_hasHydrated && isAuthenticated) {
       router.push('/dashboard');
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, router, _hasHydrated]);
 
   useEffect(() => {
     // Clear error when component unmounts
@@ -41,6 +41,17 @@ export default function LoginPage() {
       // Error is handled by the store
     }
   };
+
+  // Show loading while hydrating
+  if (!_hasHydrated) {
+    return (
+      <Card className="w-full max-w-md shadow-xl">
+        <CardContent className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="w-full max-w-md shadow-xl">

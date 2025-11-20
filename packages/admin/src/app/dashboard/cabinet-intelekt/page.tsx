@@ -10,13 +10,46 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCabinetIntelektStore } from '@/lib/stores/cabinetIntelektStore';
+import { ProviderPhoneType, ProviderEmailType, ProviderSocialPlatform } from '@/lib/api/cabinetIntelektApi';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Save, Upload, Trash2, Plus, Edit, Building2, Phone, Mail, Share2, History } from 'lucide-react';
 import { format } from 'date-fns';
 
 // Backend base URL for static files
 const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3000';
+
+// Phone type labels in Ukrainian
+const PHONE_TYPE_LABELS: Record<ProviderPhoneType, string> = {
+  MAIN: 'Головний',
+  SUPPORT: 'Підтримка',
+  SALES: 'Відділ продажів',
+  TECHNICAL: 'Технічна підтримка',
+  OTHER: 'Інше',
+};
+
+// Email type labels in Ukrainian
+const EMAIL_TYPE_LABELS: Record<ProviderEmailType, string> = {
+  GENERAL: 'Загальний',
+  SUPPORT: 'Підтримка',
+  SALES: 'Продажі',
+  TECHNICAL: 'Технічна підтримка',
+  OTHER: 'Інше',
+};
+
+// Social platform labels in Ukrainian
+const SOCIAL_PLATFORM_LABELS: Record<ProviderSocialPlatform, string> = {
+  FACEBOOK: 'Facebook',
+  INSTAGRAM: 'Instagram',
+  YOUTUBE: 'YouTube',
+  TWITTER: 'Twitter / X',
+  LINKEDIN: 'LinkedIn',
+  TELEGRAM: 'Telegram',
+  VIBER: 'Viber',
+  TIKTOK: 'TikTok',
+  OTHER: 'Інше',
+};
 
 export default function CabinetIntelektPage() {
   const {
@@ -59,6 +92,7 @@ export default function CabinetIntelektPage() {
   const [phoneModalOpen, setPhoneModalOpen] = useState(false);
   const [editingPhone, setEditingPhone] = useState<any>(null);
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneType, setPhoneType] = useState<ProviderPhoneType>('MAIN');
   const [phoneLabel, setPhoneLabel] = useState('');
   const [phoneIsPrimary, setPhoneIsPrimary] = useState(false);
 
@@ -66,13 +100,14 @@ export default function CabinetIntelektPage() {
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [editingEmail, setEditingEmail] = useState<any>(null);
   const [emailAddress, setEmailAddress] = useState('');
+  const [emailType, setEmailType] = useState<ProviderEmailType>('GENERAL');
   const [emailLabel, setEmailLabel] = useState('');
   const [emailIsPrimary, setEmailIsPrimary] = useState(false);
 
   // Social Media Modal State
   const [socialModalOpen, setSocialModalOpen] = useState(false);
   const [editingSocial, setEditingSocial] = useState<any>(null);
-  const [socialPlatform, setSocialPlatform] = useState('');
+  const [socialPlatform, setSocialPlatform] = useState<ProviderSocialPlatform>('FACEBOOK');
   const [socialUrl, setSocialUrl] = useState('');
   const [socialLabel, setSocialLabel] = useState('');
 
@@ -185,11 +220,13 @@ export default function CabinetIntelektPage() {
     if (phone) {
       setEditingPhone(phone);
       setPhoneNumber(phone.phoneNumber);
+      setPhoneType(phone.type);
       setPhoneLabel(phone.label || '');
       setPhoneIsPrimary(phone.isPrimary);
     } else {
       setEditingPhone(null);
       setPhoneNumber('');
+      setPhoneType('MAIN');
       setPhoneLabel('');
       setPhoneIsPrimary(false);
     }
@@ -198,19 +235,25 @@ export default function CabinetIntelektPage() {
 
   const handleSavePhone = async () => {
     try {
-      const data = {
-        phoneNumber,
-        label: phoneLabel || undefined,
-        isPrimary: phoneIsPrimary,
-      };
-
       if (editingPhone) {
+        const data = {
+          phoneNumber,
+          type: phoneType,
+          label: phoneLabel || undefined,
+          isPrimary: phoneIsPrimary,
+        };
         await updatePhone(editingPhone.id, data);
         toast({
           title: 'Phone updated',
           description: 'Phone number has been updated successfully',
         });
       } else {
+        const data = {
+          phoneNumber,
+          type: phoneType,
+          label: phoneLabel || undefined,
+          isPrimary: phoneIsPrimary,
+        };
         await createPhone(data);
         toast({
           title: 'Phone added',
@@ -248,11 +291,13 @@ export default function CabinetIntelektPage() {
     if (email) {
       setEditingEmail(email);
       setEmailAddress(email.email);
+      setEmailType(email.type);
       setEmailLabel(email.label || '');
       setEmailIsPrimary(email.isPrimary);
     } else {
       setEditingEmail(null);
       setEmailAddress('');
+      setEmailType('GENERAL');
       setEmailLabel('');
       setEmailIsPrimary(false);
     }
@@ -261,19 +306,25 @@ export default function CabinetIntelektPage() {
 
   const handleSaveEmail = async () => {
     try {
-      const data = {
-        email: emailAddress,
-        label: emailLabel || undefined,
-        isPrimary: emailIsPrimary,
-      };
-
       if (editingEmail) {
+        const data = {
+          email: emailAddress,
+          type: emailType,
+          label: emailLabel || undefined,
+          isPrimary: emailIsPrimary,
+        };
         await updateEmail(editingEmail.id, data);
         toast({
           title: 'Email updated',
           description: 'Email address has been updated successfully',
         });
       } else {
+        const data = {
+          email: emailAddress,
+          type: emailType,
+          label: emailLabel || undefined,
+          isPrimary: emailIsPrimary,
+        };
         await createEmail(data);
         toast({
           title: 'Email added',
@@ -315,7 +366,7 @@ export default function CabinetIntelektPage() {
       setSocialLabel(social.label || '');
     } else {
       setEditingSocial(null);
-      setSocialPlatform('');
+      setSocialPlatform('FACEBOOK');
       setSocialUrl('');
       setSocialLabel('');
     }
@@ -594,6 +645,7 @@ export default function CabinetIntelektPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Phone Number</TableHead>
+                        <TableHead>Type</TableHead>
                         <TableHead>Label</TableHead>
                         <TableHead>Primary</TableHead>
                         <TableHead>Actions</TableHead>
@@ -603,6 +655,9 @@ export default function CabinetIntelektPage() {
                       {providerInfo.phones.map((phone) => (
                         <TableRow key={phone.id}>
                           <TableCell className="font-mono">{phone.phoneNumber}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{PHONE_TYPE_LABELS[phone.type]}</Badge>
+                          </TableCell>
                           <TableCell>{phone.label || '-'}</TableCell>
                           <TableCell>
                             {phone.isPrimary && <Badge>Primary</Badge>}
@@ -653,6 +708,21 @@ export default function CabinetIntelektPage() {
                         onChange={(e) => setPhoneNumber(e.target.value)}
                         placeholder="+1234567890"
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="phoneType">Type *</Label>
+                      <Select value={phoneType} onValueChange={(value) => setPhoneType(value as ProviderPhoneType)}>
+                        <SelectTrigger id="phoneType">
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="MAIN">Головний</SelectItem>
+                          <SelectItem value="SUPPORT">Підтримка</SelectItem>
+                          <SelectItem value="SALES">Відділ продажів</SelectItem>
+                          <SelectItem value="TECHNICAL">Технічна підтримка</SelectItem>
+                          <SelectItem value="OTHER">Інше</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="phoneLabel">Label</Label>
@@ -717,6 +787,7 @@ export default function CabinetIntelektPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Email Address</TableHead>
+                        <TableHead>Type</TableHead>
                         <TableHead>Label</TableHead>
                         <TableHead>Primary</TableHead>
                         <TableHead>Actions</TableHead>
@@ -726,6 +797,9 @@ export default function CabinetIntelektPage() {
                       {providerInfo.emails.map((email) => (
                         <TableRow key={email.id}>
                           <TableCell className="font-mono">{email.email}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{EMAIL_TYPE_LABELS[email.type]}</Badge>
+                          </TableCell>
                           <TableCell>{email.label || '-'}</TableCell>
                           <TableCell>
                             {email.isPrimary && <Badge>Primary</Badge>}
@@ -777,6 +851,21 @@ export default function CabinetIntelektPage() {
                         onChange={(e) => setEmailAddress(e.target.value)}
                         placeholder="contact@example.com"
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="emailType">Type *</Label>
+                      <Select value={emailType} onValueChange={(value) => setEmailType(value as ProviderEmailType)}>
+                        <SelectTrigger id="emailType">
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="GENERAL">Загальний</SelectItem>
+                          <SelectItem value="SUPPORT">Підтримка</SelectItem>
+                          <SelectItem value="SALES">Продажі</SelectItem>
+                          <SelectItem value="TECHNICAL">Технічна підтримка</SelectItem>
+                          <SelectItem value="OTHER">Інше</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="emailLabel">Label</Label>
@@ -849,7 +938,9 @@ export default function CabinetIntelektPage() {
                     <TableBody>
                       {providerInfo.socialMedia.map((social) => (
                         <TableRow key={social.id}>
-                          <TableCell>{social.platform}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{SOCIAL_PLATFORM_LABELS[social.platform]}</Badge>
+                          </TableCell>
                           <TableCell className="font-mono text-sm">{social.url}</TableCell>
                           <TableCell>{social.label || '-'}</TableCell>
                           <TableCell>
@@ -892,12 +983,22 @@ export default function CabinetIntelektPage() {
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="socialPlatform">Platform *</Label>
-                      <Input
-                        id="socialPlatform"
-                        value={socialPlatform}
-                        onChange={(e) => setSocialPlatform(e.target.value)}
-                        placeholder="Facebook, Twitter, Instagram, etc."
-                      />
+                      <Select value={socialPlatform} onValueChange={(value) => setSocialPlatform(value as ProviderSocialPlatform)}>
+                        <SelectTrigger id="socialPlatform">
+                          <SelectValue placeholder="Select platform" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="FACEBOOK">Facebook</SelectItem>
+                          <SelectItem value="INSTAGRAM">Instagram</SelectItem>
+                          <SelectItem value="YOUTUBE">YouTube</SelectItem>
+                          <SelectItem value="TWITTER">Twitter / X</SelectItem>
+                          <SelectItem value="LINKEDIN">LinkedIn</SelectItem>
+                          <SelectItem value="TELEGRAM">Telegram</SelectItem>
+                          <SelectItem value="VIBER">Viber</SelectItem>
+                          <SelectItem value="TIKTOK">TikTok</SelectItem>
+                          <SelectItem value="OTHER">Інше</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="socialUrl">URL *</Label>
@@ -924,7 +1025,7 @@ export default function CabinetIntelektPage() {
                       >
                         Cancel
                       </Button>
-                      <Button onClick={handleSaveSocial} disabled={!socialPlatform || !socialUrl}>
+                      <Button onClick={handleSaveSocial} disabled={!socialUrl}>
                         {isLoading ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
