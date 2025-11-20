@@ -47,7 +47,7 @@ services:
       target: production
     restart: unless-stopped
     volumes:
-      - ./uploads:/app/packages/backend/uploads
+      - ./uploads:/app/uploads
     environment:
       NODE_ENV: production
       PORT: 3000

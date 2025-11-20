@@ -28,6 +28,7 @@ import {
 } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
+import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { CabinetIntelektService } from './cabinet-intelekt.service';
 import {
@@ -42,6 +43,7 @@ import {
   UpdateSocialMediaDto,
   AuditLogResponseDto,
 } from './dto';
+import { CreateVideoDto, UpdateVideoDto, VideoResponseDto } from './dto/video.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 /**
@@ -416,6 +418,189 @@ export class CabinetIntelektAdminController {
   }
 
   // ========================================
+  // Videos Management
+  // ========================================
+
+  @Post('videos')
+  @ApiOperation({
+    summary: 'Upload video',
+    description: 'Upload a new video for the provider with metadata and automatic thumbnail generation',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file', 'title'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'Video file (MP4, MOV, AVI, MKV) - max 200MB',
+        },
+        title: {
+          type: 'string',
+          example: 'Огляд послуг компанії',
+          description: 'Video title',
+        },
+        description: {
+          type: 'string',
+          example: 'Детальний огляд наших послуг та можливостей',
+          description: 'Video description',
+        },
+        order: {
+          type: 'number',
+          example: 0,
+          description: 'Display order',
+        },
+        isActive: {
+          type: 'boolean',
+          example: true,
+          description: 'Is video active',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Video uploaded successfully',
+    type: VideoResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid file format or missing data' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/videos',
+        filename: (req, file, callback) => {
+          const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
+          callback(null, uniqueName);
+        },
+      }),
+      fileFilter: (req, file, callback) => {
+        if (!file.originalname.match(/\.(mp4|mov|avi|mkv)$/i)) {
+          return callback(
+            new BadRequestException('Only video files are allowed (MP4, MOV, AVI, MKV)'),
+            false,
+          );
+        }
+        callback(null, true);
+      },
+      limits: {
+        fileSize: 200 * 1024 * 1024, // 200MB
+      },
+    }),
+  )
+  async uploadVideo(
+    @UploadedFile() file: any,
+    @Body('title') title: string,
+    @Body('description') description: string,
+    @Body('order') order: string,
+    @Body('isActive') isActive: string,
+    @Request() req,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+
+    if (!title) {
+      throw new BadRequestException('Title is required');
+    }
+
+    const adminId = req.user.id;
+    const ipAddress = req.ip || req.connection.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'];
+
+    const dto: CreateVideoDto = {
+      title,
+      description: description || undefined,
+      order: order ? parseInt(order, 10) : 0,
+      isActive: isActive === 'true' || isActive === '1' || isActive === undefined,
+    };
+
+    return this.service.uploadVideo(file, dto, adminId, ipAddress, userAgent);
+  }
+
+  @Get('videos')
+  @ApiOperation({
+    summary: 'Get all videos',
+    description: 'Retrieve all provider videos (including inactive)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Videos retrieved successfully',
+    type: [VideoResponseDto],
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getVideos(): Promise<VideoResponseDto[]> {
+    return this.service.getVideos(true); // Include inactive for admin
+  }
+
+  @Get('videos/:id')
+  @ApiOperation({
+    summary: 'Get video by ID',
+    description: 'Retrieve a specific video by ID',
+  })
+  @ApiParam({ name: 'id', description: 'Video ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Video retrieved successfully',
+    type: VideoResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Video not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getVideo(@Param('id') id: string): Promise<VideoResponseDto> {
+    return this.service.getVideo(id);
+  }
+
+  @Patch('videos/:id')
+  @ApiOperation({
+    summary: 'Update video metadata',
+    description: 'Update video title, description, order, or active status',
+  })
+  @ApiParam({ name: 'id', description: 'Video ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Video updated successfully',
+    type: VideoResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Video not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async updateVideo(
+    @Param('id') id: string,
+    @Body() dto: UpdateVideoDto,
+    @Request() req,
+  ): Promise<VideoResponseDto> {
+    const adminId = req.user.id;
+    const ipAddress = req.ip || req.connection.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'];
+
+    return this.service.updateVideo(id, dto, adminId, ipAddress, userAgent);
+  }
+
+  @Delete('videos/:id')
+  @ApiOperation({
+    summary: 'Delete video',
+    description: 'Delete a video and its associated files (video file and thumbnail)',
+  })
+  @ApiParam({ name: 'id', description: 'Video ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Video deleted successfully',
+    schema: { type: 'object', properties: { message: { type: 'string' } } },
+  })
+  @ApiResponse({ status: 404, description: 'Video not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async deleteVideo(@Param('id') id: string, @Request() req) {
+    const adminId = req.user.id;
+    const ipAddress = req.ip || req.connection.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'];
+
+    await this.service.deleteVideo(id, adminId, ipAddress, userAgent);
+
+    return { message: 'Video deleted successfully' };
+  }
+
+  // ========================================
   // Audit Logs
   // ========================================
 
@@ -440,5 +625,213 @@ export class CabinetIntelektAdminController {
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ): Promise<AuditLogResponseDto[]> {
     return this.service.getAuditLogs(limit);
+  }
+
+  // ========================================
+  // News Categories Management
+  // ========================================
+
+  @Get('news-categories')
+  @ApiOperation({
+    summary: 'Get all news categories',
+    description: 'Retrieve all news categories with news count',
+  })
+  @ApiResponse({ status: 200, description: 'Categories retrieved successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getNewsCategories() {
+    return this.service.getNewsCategories();
+  }
+
+  @Get('news-categories/:id')
+  @ApiOperation({
+    summary: 'Get news category by ID',
+    description: 'Retrieve single news category details',
+  })
+  @ApiResponse({ status: 200, description: 'Category retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Category not found' })
+  async getNewsCategoryById(@Param('id') id: string) {
+    return this.service.getNewsCategoryById(id);
+  }
+
+  @Post('news-categories')
+  @ApiOperation({
+    summary: 'Create news category',
+    description: 'Create a new news category',
+  })
+  @ApiResponse({ status: 201, description: 'Category created successfully' })
+  @ApiResponse({ status: 409, description: 'Category slug already exists' })
+  async createNewsCategory(@Body() createDto: any) {
+    return this.service.createNewsCategory(createDto);
+  }
+
+  @Put('news-categories/:id')
+  @ApiOperation({
+    summary: 'Update news category',
+    description: 'Update existing news category',
+  })
+  @ApiResponse({ status: 200, description: 'Category updated successfully' })
+  @ApiResponse({ status: 404, description: 'Category not found' })
+  async updateNewsCategory(
+    @Param('id') id: string,
+    @Body() updateDto: any,
+  ) {
+    return this.service.updateNewsCategory(id, updateDto);
+  }
+
+  @Delete('news-categories/:id')
+  @ApiOperation({
+    summary: 'Delete news category',
+    description: 'Delete news category (only if no news exist in it)',
+  })
+  @ApiResponse({ status: 200, description: 'Category deleted successfully' })
+  @ApiResponse({ status: 404, description: 'Category not found' })
+  @ApiResponse({ status: 409, description: 'Category contains news articles' })
+  async deleteNewsCategory(@Param('id') id: string) {
+    await this.service.deleteNewsCategory(id);
+    return { message: 'Category deleted successfully' };
+  }
+
+  // ========================================
+  // News Management
+  // ========================================
+
+  @Get('news')
+  @ApiOperation({
+    summary: 'Get news list (admin)',
+    description: 'Retrieve paginated news list with filters (includes unpublished)',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'categoryId', required: false, type: String })
+  @ApiQuery({ name: 'status', required: false, enum: ['DRAFT', 'SCHEDULED', 'PUBLISHED', 'ARCHIVED'] })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'tag', required: false, type: String })
+  @ApiQuery({ name: 'featured', required: false, type: Boolean })
+  @ApiQuery({ name: 'sortBy', required: false, type: String })
+  @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'] })
+  @ApiResponse({ status: 200, description: 'News list retrieved successfully' })
+  async getNewsList(@Query() query: any) {
+    return this.service.getNewsList({ ...query, includeUnpublished: true });
+  }
+
+  @Get('news/:id')
+  @ApiOperation({
+    summary: 'Get news by ID (admin)',
+    description: 'Retrieve single news article (includes unpublished)',
+  })
+  @ApiResponse({ status: 200, description: 'News retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'News not found' })
+  async getNewsById(@Param('id') id: string) {
+    return this.service.getNewsById(id, true);
+  }
+
+  @Post('news')
+  @ApiOperation({
+    summary: 'Create news article',
+    description: 'Create new news article',
+  })
+  @ApiResponse({ status: 201, description: 'News created successfully' })
+  async createNews(
+    @Body() createDto: any,
+    @Request() req,
+  ) {
+    return this.service.createNews(createDto, req.user.id);
+  }
+
+  @Put('news/:id')
+  @ApiOperation({
+    summary: 'Update news article',
+    description: 'Update existing news article',
+  })
+  @ApiResponse({ status: 200, description: 'News updated successfully' })
+  @ApiResponse({ status: 404, description: 'News not found' })
+  async updateNews(
+    @Param('id') id: string,
+    @Body() updateDto: any,
+    @Request() req,
+  ) {
+    return this.service.updateNews(id, updateDto, req.user.id);
+  }
+
+  @Delete('news/:id')
+  @ApiOperation({
+    summary: 'Delete news article',
+    description: 'Delete news article permanently',
+  })
+  @ApiResponse({ status: 200, description: 'News deleted successfully' })
+  @ApiResponse({ status: 404, description: 'News not found' })
+  async deleteNews(
+    @Param('id') id: string,
+    @Request() req,
+  ) {
+    const ipAddress = req.ip || req.connection?.remoteAddress || '0.0.0.0';
+    await this.service.deleteNews(id, req.user.id, ipAddress);
+    return { message: 'News deleted successfully' };
+  }
+
+  @Post('news/:id/cover')
+  @ApiOperation({
+    summary: 'Upload news cover image',
+    description: 'Upload or replace cover image for news article',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Cover image uploaded successfully' })
+  @ApiResponse({ status: 404, description: 'News not found' })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/news',
+        filename: (req, file, callback) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = path.extname(file.originalname);
+          callback(null, `cover-${uniqueSuffix}${ext}`);
+        },
+      }),
+      limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+      },
+      fileFilter: (req, file, callback) => {
+        if (!file.mimetype.match(/^image\/(jpg|jpeg|png|webp)$/)) {
+          return callback(
+            new BadRequestException('Only image files are allowed (JPG, PNG, WebP)'),
+            false,
+          );
+        }
+        callback(null, true);
+      },
+    }),
+  )
+  async uploadNewsCoverImage(
+    @Param('id') id: string,
+    @UploadedFile() file: any,
+    @Request() req,
+  ) {
+    return this.service.uploadNewsCoverImage(id, file, req.user.id);
+  }
+
+  @Delete('news/:id/cover')
+  @ApiOperation({
+    summary: 'Delete news cover image',
+    description: 'Remove cover image from news article',
+  })
+  @ApiResponse({ status: 200, description: 'Cover image deleted successfully' })
+  @ApiResponse({ status: 404, description: 'News or cover image not found' })
+  async deleteNewsCoverImage(
+    @Param('id') id: string,
+    @Request() req,
+  ) {
+    await this.service.deleteNewsCoverImage(id, req.user.id);
+    return { message: 'Cover image deleted successfully' };
   }
 }

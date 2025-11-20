@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import {
   cabinetIntelektApi,
   ProviderInfo,
+  ProviderVideo,
   AuditLog,
   CreateProviderInfoRequest,
   UpdateProviderInfoRequest,
@@ -11,10 +12,13 @@ import {
   UpdateEmailRequest,
   CreateSocialMediaRequest,
   UpdateSocialMediaRequest,
+  CreateVideoRequest,
+  UpdateVideoRequest,
 } from '../api/cabinetIntelektApi';
 
 interface CabinetIntelektState {
   providerInfo: ProviderInfo | null;
+  videos: ProviderVideo[];
   auditLogs: AuditLog[];
   isLoading: boolean;
   error: string | null;
@@ -43,12 +47,19 @@ interface CabinetIntelektState {
   updateSocialMedia: (id: string, data: UpdateSocialMediaRequest) => Promise<void>;
   deleteSocialMedia: (id: string) => Promise<void>;
 
+  // Video Actions
+  fetchVideos: () => Promise<void>;
+  uploadVideo: (file: File, data: CreateVideoRequest) => Promise<void>;
+  updateVideo: (id: string, data: UpdateVideoRequest) => Promise<void>;
+  deleteVideo: (id: string) => Promise<void>;
+
   // Audit Logs
   fetchAuditLogs: (limit?: number) => Promise<void>;
 }
 
 export const useCabinetIntelektStore = create<CabinetIntelektState>((set, get) => ({
   providerInfo: null,
+  videos: [],
   auditLogs: [],
   isLoading: false,
   error: null,
@@ -270,6 +281,68 @@ export const useCabinetIntelektStore = create<CabinetIntelektState>((set, get) =
     } catch (error: any) {
       set({
         error: error.response?.data?.message || 'Failed to delete social media',
+        isLoading: false,
+      });
+      throw error;
+    }
+  },
+
+  // Video Actions
+  fetchVideos: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const data = await cabinetIntelektApi.getVideos();
+      set({ videos: data, isLoading: false });
+    } catch (error: any) {
+      set({
+        error: error.response?.data?.message || 'Failed to fetch videos',
+        isLoading: false,
+      });
+    }
+  },
+
+  uploadVideo: async (file, data) => {
+    set({ isLoading: true, error: null });
+    try {
+      await cabinetIntelektApi.uploadVideo(file, data);
+      // Refresh videos list and provider info
+      await Promise.all([get().fetchVideos(), get().fetchProviderInfo()]);
+      set({ isLoading: false });
+    } catch (error: any) {
+      set({
+        error: error.response?.data?.message || 'Failed to upload video',
+        isLoading: false,
+      });
+      throw error;
+    }
+  },
+
+  updateVideo: async (id, data) => {
+    set({ isLoading: true, error: null });
+    try {
+      await cabinetIntelektApi.updateVideo(id, data);
+      // Refresh videos list and provider info
+      await Promise.all([get().fetchVideos(), get().fetchProviderInfo()]);
+      set({ isLoading: false });
+    } catch (error: any) {
+      set({
+        error: error.response?.data?.message || 'Failed to update video',
+        isLoading: false,
+      });
+      throw error;
+    }
+  },
+
+  deleteVideo: async (id) => {
+    set({ isLoading: true, error: null });
+    try {
+      await cabinetIntelektApi.deleteVideo(id);
+      // Refresh videos list and provider info
+      await Promise.all([get().fetchVideos(), get().fetchProviderInfo()]);
+      set({ isLoading: false });
+    } catch (error: any) {
+      set({
+        error: error.response?.data?.message || 'Failed to delete video',
         isLoading: false,
       });
       throw error;

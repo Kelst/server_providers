@@ -14,8 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useCabinetIntelektStore } from '@/lib/stores/cabinetIntelektStore';
 import { ProviderPhoneType, ProviderEmailType, ProviderSocialPlatform } from '@/lib/api/cabinetIntelektApi';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Save, Upload, Trash2, Plus, Edit, Building2, Phone, Mail, Share2, History } from 'lucide-react';
+import { Loader2, Save, Upload, Trash2, Plus, Edit, Building2, Phone, Mail, Share2, History, Video, Play, Eye, Newspaper, FolderTree } from 'lucide-react';
 import { format } from 'date-fns';
+import { NewsManagement } from '@/components/news/NewsManagement';
+import { NewsCategoryManagement } from '@/components/news/NewsCategoryManagement';
 
 // Backend base URL for static files
 const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3000';
@@ -54,6 +56,7 @@ const SOCIAL_PLATFORM_LABELS: Record<ProviderSocialPlatform, string> = {
 export default function CabinetIntelektPage() {
   const {
     providerInfo,
+    videos,
     auditLogs,
     isLoading,
     fetchProviderInfo,
@@ -70,6 +73,10 @@ export default function CabinetIntelektPage() {
     createSocialMedia,
     updateSocialMedia,
     deleteSocialMedia,
+    fetchVideos,
+    uploadVideo,
+    updateVideo,
+    deleteVideo,
     fetchAuditLogs,
   } = useCabinetIntelektStore();
   const { toast } = useToast();
@@ -111,9 +118,23 @@ export default function CabinetIntelektPage() {
   const [socialUrl, setSocialUrl] = useState('');
   const [socialLabel, setSocialLabel] = useState('');
 
+  // Video State
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoTitle, setVideoTitle] = useState('');
+  const [videoDescription, setVideoDescription] = useState('');
+  const [videoOrder, setVideoOrder] = useState(0);
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [editingVideo, setEditingVideo] = useState<any>(null);
+  const [previewVideo, setPreviewVideo] = useState<any>(null);
+  const videoFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Logo Preview State
+  const [logoPreviewOpen, setLogoPreviewOpen] = useState(false);
+
   useEffect(() => {
     fetchProviderInfo();
-  }, [fetchProviderInfo]);
+    fetchVideos();
+  }, [fetchProviderInfo, fetchVideos]);
 
   useEffect(() => {
     if (providerInfo) {
@@ -420,6 +441,122 @@ export default function CabinetIntelektPage() {
     }
   };
 
+  // Video handlers
+  const handleOpenVideoModal = (video?: any) => {
+    if (video) {
+      setEditingVideo(video);
+      setVideoTitle(video.title);
+      setVideoDescription(video.description || '');
+      setVideoOrder(video.order);
+    } else {
+      setEditingVideo(null);
+      setVideoTitle('');
+      setVideoDescription('');
+      setVideoOrder(0);
+      setVideoFile(null);
+    }
+    setVideoModalOpen(true);
+  };
+
+  const handleVideoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Check file size (200MB limit)
+      if (file.size > 200 * 1024 * 1024) {
+        toast({
+          variant: 'destructive',
+          title: 'File too large',
+          description: 'Video file must be less than 200MB',
+        });
+        return;
+      }
+      setVideoFile(file);
+    }
+  };
+
+  const handleUploadVideo = async () => {
+    if (!videoFile || !videoTitle) return;
+
+    try {
+      await uploadVideo(videoFile, {
+        title: videoTitle,
+        description: videoDescription || undefined,
+        order: videoOrder,
+        isActive: true,
+      });
+      toast({
+        title: 'Video uploaded',
+        description: 'Video has been uploaded successfully',
+      });
+      setVideoModalOpen(false);
+      setVideoFile(null);
+      setVideoTitle('');
+      setVideoDescription('');
+      setVideoOrder(0);
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to upload video',
+      });
+    }
+  };
+
+  const handleUpdateVideo = async () => {
+    if (!editingVideo || !videoTitle) return;
+
+    try {
+      await updateVideo(editingVideo.id, {
+        title: videoTitle,
+        description: videoDescription || undefined,
+        order: videoOrder,
+      });
+      toast({
+        title: 'Video updated',
+        description: 'Video has been updated successfully',
+      });
+      setVideoModalOpen(false);
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to update video',
+      });
+    }
+  };
+
+  const handleToggleVideoActive = async (id: string, isActive: boolean) => {
+    try {
+      await updateVideo(id, { isActive: !isActive });
+      toast({
+        title: isActive ? 'Video deactivated' : 'Video activated',
+        description: `Video has been ${isActive ? 'deactivated' : 'activated'} successfully`,
+      });
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to toggle video status',
+      });
+    }
+  };
+
+  const handleDeleteVideo = async (id: string) => {
+    try {
+      await deleteVideo(id);
+      toast({
+        title: 'Video deleted',
+        description: 'Video has been removed successfully',
+      });
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to delete video',
+      });
+    }
+  };
+
   const handleLoadAuditLogs = () => {
     fetchAuditLogs(100);
   };
@@ -455,6 +592,18 @@ export default function CabinetIntelektPage() {
               <Share2 className="h-4 w-4 mr-2" />
               Social Media
             </TabsTrigger>
+            <TabsTrigger value="videos">
+              <Video className="h-4 w-4 mr-2" />
+              Videos
+            </TabsTrigger>
+            <TabsTrigger value="news">
+              <Newspaper className="h-4 w-4 mr-2" />
+              News
+            </TabsTrigger>
+            <TabsTrigger value="news-categories">
+              <FolderTree className="h-4 w-4 mr-2" />
+              News Categories
+            </TabsTrigger>
             <TabsTrigger value="audit" onClick={handleLoadAuditLogs}>
               <History className="h-4 w-4 mr-2" />
               Audit Logs
@@ -476,12 +625,18 @@ export default function CabinetIntelektPage() {
                   <Label>Company Logo</Label>
                   <div className="flex items-center gap-4">
                     {logoPreview && (
-                      <div className="relative w-32 h-32 border rounded-lg overflow-hidden bg-muted">
+                      <div
+                        className="relative w-32 h-32 border rounded-lg overflow-hidden bg-muted cursor-pointer hover:opacity-80 transition-opacity group"
+                        onClick={() => setLogoPreviewOpen(true)}
+                      >
                         <img
                           src={`${BACKEND_BASE_URL}${logoPreview}`}
                           alt="Company logo"
                           className="w-full h-full object-contain"
                         />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors">
+                          <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+                        </div>
                       </div>
                     )}
                     <div className="flex flex-col gap-2">
@@ -510,14 +665,23 @@ export default function CabinetIntelektPage() {
                         </Button>
                       )}
                       {logoPreview && (
-                        <Button
-                          variant="destructive"
-                          onClick={handleDeleteLogo}
-                          disabled={isLoading}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete Logo
-                        </Button>
+                        <>
+                          <Button
+                            variant="outline"
+                            onClick={() => setLogoPreviewOpen(true)}
+                          >
+                            <Eye className="h-4 w-4 mr-2" />
+                            Preview Logo
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            onClick={handleDeleteLogo}
+                            disabled={isLoading}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete Logo
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -620,6 +784,40 @@ export default function CabinetIntelektPage() {
                 </Button>
               </CardContent>
             </Card>
+
+            {/* Logo Preview Modal */}
+            {logoPreviewOpen && logoPreview && (
+              <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setLogoPreviewOpen(false)}>
+                <div className="w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+                  <Card className="overflow-hidden">
+                    <CardHeader className="flex flex-row items-center justify-between">
+                      <CardTitle>Company Logo</CardTitle>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setLogoPreviewOpen(false)}
+                      >
+                        ✕
+                      </Button>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="w-full bg-muted flex items-center justify-center p-8">
+                        <img
+                          src={`${BACKEND_BASE_URL}${logoPreview}`}
+                          alt="Company logo preview"
+                          className="max-w-full max-h-[70vh] object-contain"
+                        />
+                      </div>
+                      <div className="p-4 bg-muted/50">
+                        <p className="text-sm text-muted-foreground">
+                          {companyName} - Company Logo
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            )}
           </TabsContent>
 
           {/* Phones Tab */}
@@ -1037,6 +1235,306 @@ export default function CabinetIntelektPage() {
                 </Card>
               </div>
             )}
+          </TabsContent>
+
+          {/* Videos Tab */}
+          <TabsContent value="videos">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Videos</CardTitle>
+                    <CardDescription>
+                      Manage provider videos (max 200MB per video)
+                    </CardDescription>
+                  </div>
+                  <Button onClick={() => handleOpenVideoModal()}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Upload Video
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {videos && videos.length > 0 ? (
+                  <div className="space-y-4">
+                    {videos.map((video) => (
+                      <Card key={video.id} className="overflow-hidden">
+                        <div className="flex gap-4 p-4">
+                          {/* Video Thumbnail */}
+                          <div
+                            className="relative w-48 h-28 bg-muted rounded-lg overflow-hidden flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => setPreviewVideo(video)}
+                          >
+                            {video.thumbnailUrl ? (
+                              <img
+                                src={`${BACKEND_BASE_URL}${video.thumbnailUrl}`}
+                                alt={video.title}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Video className="h-12 w-12 text-muted-foreground" />
+                              </div>
+                            )}
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors">
+                              <Play className="h-8 w-8 text-white drop-shadow-lg" />
+                            </div>
+                          </div>
+
+                          {/* Video Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1">
+                                <h4 className="font-semibold text-lg mb-1">{video.title}</h4>
+                                {video.description && (
+                                  <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
+                                    {video.description}
+                                  </p>
+                                )}
+                                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                                  <Badge variant="outline">
+                                    Order: {video.order}
+                                  </Badge>
+                                  {video.duration && (
+                                    <Badge variant="outline">
+                                      {Math.floor(video.duration / 60)}:{(video.duration % 60).toString().padStart(2, '0')}
+                                    </Badge>
+                                  )}
+                                  <Badge variant="outline">
+                                    {(video.fileSize / (1024 * 1024)).toFixed(1)} MB
+                                  </Badge>
+                                  <Badge variant={video.isActive ? 'default' : 'secondary'}>
+                                    {video.isActive ? 'Active' : 'Inactive'}
+                                  </Badge>
+                                </div>
+                              </div>
+
+                              {/* Actions */}
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setPreviewVideo(video)}
+                                  title="Preview video"
+                                >
+                                  <Play className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleOpenVideoModal(video)}
+                                  title="Edit metadata"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant={video.isActive ? 'secondary' : 'default'}
+                                  size="sm"
+                                  onClick={() => handleToggleVideoActive(video.id, video.isActive)}
+                                >
+                                  {video.isActive ? 'Deactivate' : 'Activate'}
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => handleDeleteVideo(video.id)}
+                                  title="Delete video"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-center text-muted-foreground py-8">
+                    No videos uploaded yet
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Video Preview Modal */}
+            {previewVideo && (
+              <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setPreviewVideo(null)}>
+                <div className="w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
+                  <Card className="overflow-hidden">
+                    <CardHeader className="flex flex-row items-center justify-between">
+                      <div>
+                        <CardTitle>{previewVideo.title}</CardTitle>
+                        {previewVideo.description && (
+                          <CardDescription className="mt-2">
+                            {previewVideo.description}
+                          </CardDescription>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setPreviewVideo(null)}
+                      >
+                        ✕
+                      </Button>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <video
+                        className="w-full"
+                        controls
+                        autoPlay
+                        src={`${BACKEND_BASE_URL}${previewVideo.videoUrl}`}
+                      >
+                        Your browser does not support the video tag.
+                      </video>
+                      <div className="p-4 bg-muted/50">
+                        <div className="flex flex-wrap gap-2 text-sm">
+                          {previewVideo.duration && (
+                            <Badge variant="outline">
+                              Duration: {Math.floor(previewVideo.duration / 60)}:{(previewVideo.duration % 60).toString().padStart(2, '0')}
+                            </Badge>
+                          )}
+                          <Badge variant="outline">
+                            Size: {(previewVideo.fileSize / (1024 * 1024)).toFixed(1)} MB
+                          </Badge>
+                          <Badge variant="outline">
+                            Format: {previewVideo.mimeType}
+                          </Badge>
+                          <Badge variant={previewVideo.isActive ? 'default' : 'secondary'}>
+                            {previewVideo.isActive ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            )}
+
+            {/* Video Upload/Edit Modal */}
+            {videoModalOpen && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <Card className="w-full max-w-lg">
+                  <CardHeader>
+                    <CardTitle>{editingVideo ? 'Edit' : 'Upload'} Video</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {!editingVideo && (
+                      <div className="space-y-2">
+                        <Label htmlFor="videoFile">Video File *</Label>
+                        <input
+                          ref={videoFileInputRef}
+                          type="file"
+                          accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska"
+                          onChange={handleVideoFileChange}
+                          className="hidden"
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => videoFileInputRef.current?.click()}
+                            className="flex-1"
+                          >
+                            <Upload className="h-4 w-4 mr-2" />
+                            {videoFile ? videoFile.name : 'Choose Video File'}
+                          </Button>
+                        </div>
+                        {videoFile && (
+                          <p className="text-xs text-muted-foreground">
+                            Size: {(videoFile.size / (1024 * 1024)).toFixed(1)} MB
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          Supported formats: MP4, MOV, AVI, MKV (max 200MB)
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <Label htmlFor="videoTitle">Title *</Label>
+                      <Input
+                        id="videoTitle"
+                        value={videoTitle}
+                        onChange={(e) => setVideoTitle(e.target.value)}
+                        placeholder="Video title"
+                        maxLength={200}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="videoDescription">Description</Label>
+                      <Textarea
+                        id="videoDescription"
+                        value={videoDescription}
+                        onChange={(e) => setVideoDescription(e.target.value)}
+                        placeholder="Optional description"
+                        rows={3}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="videoOrder">Display Order</Label>
+                      <Input
+                        id="videoOrder"
+                        type="number"
+                        min={0}
+                        value={videoOrder}
+                        onChange={(e) => setVideoOrder(parseInt(e.target.value) || 0)}
+                        placeholder="0"
+                      />
+                    </div>
+
+                    <div className="flex gap-2 justify-end">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setVideoModalOpen(false);
+                          setVideoFile(null);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      {editingVideo ? (
+                        <Button
+                          onClick={handleUpdateVideo}
+                          disabled={!videoTitle || isLoading}
+                        >
+                          {isLoading ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Save className="h-4 w-4 mr-2" />
+                          )}
+                          Update
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={handleUploadVideo}
+                          disabled={!videoFile || !videoTitle || isLoading}
+                        >
+                          {isLoading ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Upload className="h-4 w-4 mr-2" />
+                          )}
+                          Upload
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* News Tab */}
+          <TabsContent value="news">
+            <NewsManagement />
+          </TabsContent>
+
+          {/* News Categories Tab */}
+          <TabsContent value="news-categories">
+            <NewsCategoryManagement />
           </TabsContent>
 
           {/* Audit Logs Tab */}

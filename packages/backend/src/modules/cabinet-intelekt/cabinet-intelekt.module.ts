@@ -8,10 +8,23 @@ import { DatabaseModule } from '../database/database.module';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
-// Ensure uploads directory exists
+// Ensure uploads directories exist
 const uploadsDir = join(process.cwd(), 'uploads', 'provider');
+const videosDir = join(process.cwd(), 'uploads', 'videos');
+const thumbnailsDir = join(process.cwd(), 'uploads', 'videos', 'thumbnails');
+const newsDir = join(process.cwd(), 'uploads', 'news');
+
 if (!existsSync(uploadsDir)) {
   mkdirSync(uploadsDir, { recursive: true });
+}
+if (!existsSync(videosDir)) {
+  mkdirSync(videosDir, { recursive: true });
+}
+if (!existsSync(thumbnailsDir)) {
+  mkdirSync(thumbnailsDir, { recursive: true });
+}
+if (!existsSync(newsDir)) {
+  mkdirSync(newsDir, { recursive: true });
 }
 
 @Module({

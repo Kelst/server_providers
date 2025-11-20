@@ -4,4 +4,6 @@ export * from './update-provider-info.dto';
 export * from './phone.dto';
 export * from './email.dto';
 export * from './social-media.dto';
+export * from './video.dto';
 export * from './audit-log-response.dto';
+export * from './news';

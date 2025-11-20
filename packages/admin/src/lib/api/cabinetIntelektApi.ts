@@ -20,6 +20,7 @@ export interface ProviderInfo {
   phones: ProviderPhone[];
   emails: ProviderEmail[];
   socialMedia: ProviderSocialMedia[];
+  videos: ProviderVideo[];
 }
 
 export interface ProviderPhone {
@@ -54,6 +55,22 @@ export interface ProviderSocialMedia {
   platform: ProviderSocialPlatform;
   url: string;
   label?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProviderVideo {
+  id: string;
+  providerId: string;
+  title: string;
+  description?: string;
+  videoUrl: string;
+  thumbnailUrl?: string;
+  fileSize: number;
+  duration?: number;
+  mimeType: string;
+  isActive: boolean;
+  order: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -138,6 +155,132 @@ export interface UpdateSocialMediaRequest {
   platform?: ProviderSocialPlatform;
   url?: string;
   label?: string;
+}
+
+export interface CreateVideoRequest {
+  title: string;
+  description?: string;
+  order?: number;
+  isActive?: boolean;
+}
+
+export interface UpdateVideoRequest {
+  title?: string;
+  description?: string;
+  order?: number;
+  isActive?: boolean;
+}
+
+// News Types
+export type NewsStatus = 'DRAFT' | 'SCHEDULED' | 'PUBLISHED' | 'ARCHIVED';
+
+export interface NewsCategory {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  order: number;
+  isActive: boolean;
+  newsCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface News {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt?: string;
+  content: string;
+  coverImageUrl?: string;
+  categoryId?: string;
+  category?: {
+    id: string;
+    name: string;
+    slug: string;
+    color?: string;
+    icon?: string;
+  };
+  authorId: string;
+  author?: {
+    id: string;
+    email: string;
+    firstName?: string;
+    lastName?: string;
+  };
+  status: NewsStatus;
+  tags: string[];
+  isFeatured: boolean;
+  isPinned: boolean;
+  viewsCount: number;
+  publishedAt?: string;
+  scheduledFor?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateNewsCategoryRequest {
+  name: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  order?: number;
+  isActive?: boolean;
+}
+
+export interface UpdateNewsCategoryRequest {
+  name?: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  order?: number;
+  isActive?: boolean;
+}
+
+export interface CreateNewsRequest {
+  title: string;
+  excerpt?: string;
+  content: string;
+  categoryId?: string;
+  tags?: string[];
+  isFeatured?: boolean;
+  isPinned?: boolean;
+  status?: NewsStatus;
+  scheduledFor?: string;
+}
+
+export interface UpdateNewsRequest {
+  title?: string;
+  excerpt?: string;
+  content?: string;
+  categoryId?: string;
+  tags?: string[];
+  isFeatured?: boolean;
+  isPinned?: boolean;
+  status?: NewsStatus;
+  scheduledFor?: string;
+}
+
+export interface NewsListQuery {
+  page?: number;
+  limit?: number;
+  categoryId?: string;
+  status?: NewsStatus;
+  search?: string;
+  tag?: string;
+  featured?: boolean;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface NewsListResponse {
+  data: News[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
 export const cabinetIntelektApi = {
@@ -229,5 +372,111 @@ export const cabinetIntelektApi = {
     const params = limit ? { limit } : {};
     const { data } = await apiClient.get<AuditLog[]>('/admin/cabinet-intelekt/audit-logs', { params });
     return data;
+  },
+
+  // Video Management
+  async getVideos(): Promise<ProviderVideo[]> {
+    const { data } = await apiClient.get<ProviderVideo[]>('/admin/cabinet-intelekt/videos');
+    return data;
+  },
+
+  async uploadVideo(file: File, videoData: CreateVideoRequest): Promise<ProviderVideo> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('title', videoData.title);
+    if (videoData.description) formData.append('description', videoData.description);
+    if (videoData.order !== undefined) formData.append('order', videoData.order.toString());
+    if (videoData.isActive !== undefined) formData.append('isActive', videoData.isActive.toString());
+
+    const { data } = await apiClient.post<ProviderVideo>(
+      '/admin/cabinet-intelekt/videos',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return data;
+  },
+
+  async updateVideo(id: string, videoData: UpdateVideoRequest): Promise<ProviderVideo> {
+    const { data } = await apiClient.patch<ProviderVideo>(`/admin/cabinet-intelekt/videos/${id}`, videoData);
+    return data;
+  },
+
+  async deleteVideo(id: string): Promise<void> {
+    await apiClient.delete(`/admin/cabinet-intelekt/videos/${id}`);
+  },
+
+  // ========================================
+  // News Categories
+  // ========================================
+
+  async getNewsCategories(): Promise<NewsCategory[]> {
+    const { data } = await apiClient.get<NewsCategory[]>('/admin/cabinet-intelekt/news-categories');
+    return data;
+  },
+
+  async createNewsCategory(categoryData: CreateNewsCategoryRequest): Promise<NewsCategory> {
+    const { data } = await apiClient.post<NewsCategory>('/admin/cabinet-intelekt/news-categories', categoryData);
+    return data;
+  },
+
+  async updateNewsCategory(id: string, categoryData: UpdateNewsCategoryRequest): Promise<NewsCategory> {
+    const { data } = await apiClient.put<NewsCategory>(`/admin/cabinet-intelekt/news-categories/${id}`, categoryData);
+    return data;
+  },
+
+  async deleteNewsCategory(id: string): Promise<void> {
+    await apiClient.delete(`/admin/cabinet-intelekt/news-categories/${id}`);
+  },
+
+  // ========================================
+  // News
+  // ========================================
+
+  async getNewsList(params?: NewsListQuery): Promise<NewsListResponse> {
+    const { data } = await apiClient.get<NewsListResponse>('/admin/cabinet-intelekt/news', { params });
+    return data;
+  },
+
+  async getNewsById(id: string): Promise<News> {
+    const { data } = await apiClient.get<News>(`/admin/cabinet-intelekt/news/${id}`);
+    return data;
+  },
+
+  async createNews(newsData: CreateNewsRequest): Promise<News> {
+    const { data } = await apiClient.post<News>('/admin/cabinet-intelekt/news', newsData);
+    return data;
+  },
+
+  async updateNews(id: string, newsData: UpdateNewsRequest): Promise<News> {
+    const { data } = await apiClient.put<News>(`/admin/cabinet-intelekt/news/${id}`, newsData);
+    return data;
+  },
+
+  async deleteNews(id: string): Promise<void> {
+    await apiClient.delete(`/admin/cabinet-intelekt/news/${id}`);
+  },
+
+  async uploadNewsCover(id: string, file: File): Promise<News> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const { data } = await apiClient.post<News>(
+      `/admin/cabinet-intelekt/news/${id}/cover`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return data;
+  },
+
+  async deleteNewsCover(id: string): Promise<void> {
+    await apiClient.delete(`/admin/cabinet-intelekt/news/${id}/cover`);
   },
 };

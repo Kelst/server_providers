@@ -1,0 +1,12 @@
+# Ignore all uploaded files
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.jpg
+*.jpeg
+*.png
+
+# But keep directory structure
+!.gitignore
+!**/
