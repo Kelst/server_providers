@@ -10,12 +10,16 @@ import {
 import { CabinetIntelektService } from './cabinet-intelekt.service';
 import {
   ProviderInfoResponseDto,
+  ProviderContactsResponseDto,
+  ProviderCompanyResponseDto,
   VideoResponseDto,
   NewsResponseDto,
   NewsListResponseDto,
   NewsCategoryResponseDto,
   ConnectionRequestResponseDto,
   CreateConnectionRequestDto,
+  CreateAppealDto,
+  AppealResponseDto,
 } from './dto';
 import { ApiTokenGuard } from '../auth/guards/api-token.guard';
 import { ScopeGuard } from '../../common/guards/scope.guard';
@@ -54,6 +58,44 @@ export class CabinetIntelektController {
   @ApiResponse({ status: 429, description: 'Rate limit exceeded' })
   async getProviderInfo(): Promise<ProviderInfoResponseDto> {
     return this.service.getProviderInfo();
+  }
+
+  @Get('contacts')
+  @ApiOperation({
+    summary: 'Get provider contacts',
+    description:
+      'Retrieve provider contact information including phone numbers, email addresses, and social media links. This endpoint is intended for mobile applications.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Provider contacts retrieved successfully',
+    type: ProviderContactsResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Invalid or missing API token' })
+  @ApiResponse({ status: 403, description: 'API token missing required scope' })
+  @ApiResponse({ status: 404, description: 'Provider information not found' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded' })
+  async getProviderContacts(): Promise<ProviderContactsResponseDto> {
+    return this.service.getProviderContacts();
+  }
+
+  @Get('company')
+  @ApiOperation({
+    summary: 'Get provider company info',
+    description:
+      'Retrieve basic company information including name, description, logo, website, working hours, and address. This endpoint is intended for mobile applications.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Provider company info retrieved successfully',
+    type: ProviderCompanyResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Invalid or missing API token' })
+  @ApiResponse({ status: 403, description: 'API token missing required scope' })
+  @ApiResponse({ status: 404, description: 'Provider information not found' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded' })
+  async getProviderCompany(): Promise<ProviderCompanyResponseDto> {
+    return this.service.getProviderCompany();
   }
 
   @Get('videos')
@@ -250,5 +292,38 @@ export class CabinetIntelektController {
     const ipAddress = (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
     const userAgent = req.headers['user-agent'];
     return await this.service.createConnectionRequest(dto, ipAddress, userAgent);
+  }
+
+  @Post('appeals')
+  @Public() // Make this endpoint public (no API token required)
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 3, ttl: 3600000 } }) // 3 requests per hour per IP
+  @ApiOperation({
+    summary: 'Submit user appeal (public endpoint)',
+    description:
+      'Allows users to submit appeals/requests that are sent directly to Telegram. ' +
+      'No data is stored in the database. Rate limited to 3 requests per hour per IP address. ' +
+      'Additional phone-based cooldown: 1 hour between appeals from the same phone number. ' +
+      'No authentication required.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Appeal submitted successfully',
+    type: AppealResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid input data or service unavailable',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests: rate limit exceeded (IP-based or phone-based cooldown)',
+  })
+  async submitAppeal(
+    @Body() dto: CreateAppealDto,
+    @Req() req: any,
+  ): Promise<AppealResponseDto> {
+    const ipAddress = (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
+    return await this.service.submitAppeal(dto, ipAddress);
   }
 }

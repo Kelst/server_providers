@@ -591,6 +591,10 @@ model ProviderInfo {
   telegramChatId                String?  @map("telegram_chat_id") @db.VarChar(100)
   telegramNotificationsEnabled  Boolean  @default(false) @map("telegram_notifications_enabled")
 
+  // Telegram Notifications for User Appeals (окремий чат)
+  appealsTelegramChatId         String?  @map("appeals_telegram_chat_id") @db.VarChar(100)
+  appealsTelegramEnabled        Boolean  @default(false) @map("appeals_telegram_enabled")
+
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 

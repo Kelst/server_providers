@@ -195,7 +195,7 @@ export class TelegramSettingsDto {
   telegramBotToken?: string;
 
   @ApiPropertyOptional({
-    description: 'Chat ID для сповіщень',
+    description: 'Chat ID для сповіщень про заявки на підключення',
     example: '-1001234567890',
   })
   @IsOptional()
@@ -204,12 +204,30 @@ export class TelegramSettingsDto {
   telegramChatId?: string;
 
   @ApiPropertyOptional({
-    description: 'Чи увімкнені Telegram сповіщення',
+    description: 'Чи увімкнені Telegram сповіщення про заявки',
     default: false,
   })
   @IsOptional()
   @IsBoolean()
   telegramNotificationsEnabled?: boolean;
+
+  // Appeals Telegram Settings
+  @ApiPropertyOptional({
+    description: 'Chat ID для звернень абонентів (окремий чат)',
+    example: '-1001234567890',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  appealsTelegramChatId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Чи увімкнені Telegram сповіщення про звернення абонентів',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  appealsTelegramEnabled?: boolean;
 }
 
 // Test Telegram Settings DTO

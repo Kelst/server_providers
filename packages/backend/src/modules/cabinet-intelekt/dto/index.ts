@@ -8,3 +8,4 @@ export * from './video.dto';
 export * from './audit-log-response.dto';
 export * from './news';
 export * from './connection-request.dto';
+export * from './appeal.dto';

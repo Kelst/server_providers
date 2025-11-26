@@ -336,6 +336,9 @@ export interface TelegramSettings {
   telegramBotToken?: string | null;
   telegramChatId?: string | null;
   telegramNotificationsEnabled: boolean;
+  // Appeals Telegram Settings
+  appealsTelegramChatId?: string | null;
+  appealsTelegramEnabled: boolean;
 }
 
 export interface TestTelegramSettingsRequest {
@@ -580,6 +583,14 @@ export const cabinetIntelektApi = {
   async testTelegramSettings(testData: TestTelegramSettingsRequest): Promise<{ success: boolean; message: string }> {
     const { data } = await apiClient.post<{ success: boolean; message: string }>(
       '/admin/cabinet-intelekt/telegram-settings/test',
+      testData
+    );
+    return data;
+  },
+
+  async testAppealsSettings(testData: TestTelegramSettingsRequest): Promise<{ success: boolean; message: string }> {
+    const { data } = await apiClient.post<{ success: boolean; message: string }>(
+      '/admin/cabinet-intelekt/telegram-settings/test-appeals',
       testData
     );
     return data;

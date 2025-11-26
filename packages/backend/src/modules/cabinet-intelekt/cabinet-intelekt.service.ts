@@ -8,10 +8,13 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { CacheService } from '../../common/services/cache.service';
 import {
   CreateProviderInfoDto,
   UpdateProviderInfoDto,
   ProviderInfoResponseDto,
+  ProviderContactsResponseDto,
+  ProviderCompanyResponseDto,
   CreatePhoneDto,
   UpdatePhoneDto,
   CreateEmailDto,
@@ -25,6 +28,8 @@ import {
   ConnectionRequestListQueryDto,
   ConnectionRequestListResponseDto,
   TelegramSettingsDto,
+  CreateAppealDto,
+  AppealResponseDto,
 } from './dto';
 import { CreateVideoDto, UpdateVideoDto, VideoResponseDto } from './dto/video.dto';
 import {
@@ -42,9 +47,14 @@ import { TelegramService } from './services/telegram.service';
 export class CabinetIntelektService {
   private readonly logger = new Logger(CabinetIntelektService.name);
 
+  // Redis key prefix for appeal cooldown
+  private readonly APPEAL_COOLDOWN_PREFIX = 'appeal:cooldown:';
+  private readonly APPEAL_COOLDOWN_TTL = 3600; // 1 hour in seconds
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegramService: TelegramService,
+    private readonly cacheService: CacheService,
   ) {}
 
   /**
@@ -70,6 +80,62 @@ export class CabinetIntelektService {
     }
 
     return provider as ProviderInfoResponseDto;
+  }
+
+  /**
+   * Get provider contacts only (public method for mobile apps)
+   */
+  async getProviderContacts(): Promise<ProviderContactsResponseDto> {
+    this.logger.debug('Fetching provider contacts');
+
+    const provider = await this.prisma.providerInfo.findFirst({
+      include: {
+        phones: true,
+        emails: true,
+        socialMedia: true,
+      },
+    });
+
+    if (!provider) {
+      throw new NotFoundException('Provider information not found');
+    }
+
+    return {
+      phones: provider.phones,
+      emails: provider.emails,
+      socialMedia: provider.socialMedia,
+    } as ProviderContactsResponseDto;
+  }
+
+  /**
+   * Get provider company info only (public method for mobile apps)
+   */
+  async getProviderCompany(): Promise<ProviderCompanyResponseDto> {
+    this.logger.debug('Fetching provider company info');
+
+    const provider = await this.prisma.providerInfo.findFirst({
+      select: {
+        id: true,
+        companyName: true,
+        description: true,
+        logoUrl: true,
+        website: true,
+        telegramBot: true,
+        workingHours: true,
+        addressStreet: true,
+        addressCity: true,
+        addressPostal: true,
+        addressCountry: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!provider) {
+      throw new NotFoundException('Provider information not found');
+    }
+
+    return provider as ProviderCompanyResponseDto;
   }
 
   /**
@@ -1684,6 +1750,8 @@ export class CabinetIntelektService {
         telegramBotToken: undefined,
         telegramChatId: undefined,
         telegramNotificationsEnabled: false,
+        appealsTelegramChatId: undefined,
+        appealsTelegramEnabled: false,
       };
     }
 
@@ -1691,6 +1759,8 @@ export class CabinetIntelektService {
       telegramBotToken: providerInfo.telegramBotToken || undefined,
       telegramChatId: providerInfo.telegramChatId || undefined,
       telegramNotificationsEnabled: providerInfo.telegramNotificationsEnabled,
+      appealsTelegramChatId: providerInfo.appealsTelegramChatId || undefined,
+      appealsTelegramEnabled: providerInfo.appealsTelegramEnabled,
     };
   }
 
@@ -1710,6 +1780,8 @@ export class CabinetIntelektService {
         telegramBotToken: data.telegramBotToken,
         telegramChatId: data.telegramChatId,
         telegramNotificationsEnabled: data.telegramNotificationsEnabled ?? false,
+        appealsTelegramChatId: data.appealsTelegramChatId,
+        appealsTelegramEnabled: data.appealsTelegramEnabled ?? false,
       },
     });
 
@@ -1719,6 +1791,8 @@ export class CabinetIntelektService {
       telegramBotToken: updated.telegramBotToken || undefined,
       telegramChatId: updated.telegramChatId || undefined,
       telegramNotificationsEnabled: updated.telegramNotificationsEnabled,
+      appealsTelegramChatId: updated.appealsTelegramChatId || undefined,
+      appealsTelegramEnabled: updated.appealsTelegramEnabled,
     };
   }
 
@@ -1727,5 +1801,83 @@ export class CabinetIntelektService {
    */
   async testTelegramSettings(botToken: string, chatId: string): Promise<{ success: boolean; message: string }> {
     return await this.telegramService.testTelegramConnection(botToken, chatId);
+  }
+
+  /**
+   * Test Appeals Telegram settings
+   */
+  async testAppealsSettings(botToken: string, chatId: string): Promise<{ success: boolean; message: string }> {
+    return await this.telegramService.testAppealsConnection(botToken, chatId);
+  }
+
+  // ==================== APPEALS ====================
+
+  /**
+   * Submit user appeal (send to Telegram without saving to DB)
+   */
+  async submitAppeal(
+    data: CreateAppealDto,
+    ipAddress: string,
+  ): Promise<AppealResponseDto> {
+    this.logger.debug(`Processing appeal from phone ${data.phoneNumber}`);
+
+    // Normalize phone number to +380XXXXXXXXX format
+    const { normalizePhoneNumber } = await import('./utils/phone.utils');
+    const normalizedPhone = normalizePhoneNumber(data.phoneNumber);
+
+    // Check phone cooldown in Redis
+    const cooldownKey = `${this.APPEAL_COOLDOWN_PREFIX}${normalizedPhone}`;
+    const existingCooldown = await this.cacheService.get<boolean>(cooldownKey);
+
+    if (existingCooldown) {
+      const ttl = await this.cacheService.ttl(cooldownKey);
+      const minutesLeft = Math.ceil(ttl / 60);
+      throw new HttpException(
+        `Ви вже відправляли звернення. Спробуйте через ${minutesLeft} хв.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    // Get provider info for Telegram settings
+    const providerInfo = await this.prisma.providerInfo.findFirst();
+
+    if (!providerInfo) {
+      throw new BadRequestException('Сервіс тимчасово недоступний. Спробуйте пізніше.');
+    }
+
+    if (!providerInfo.appealsTelegramEnabled) {
+      throw new BadRequestException('Прийом звернень тимчасово недоступний.');
+    }
+
+    if (!providerInfo.telegramBotToken || !providerInfo.appealsTelegramChatId) {
+      this.logger.error('Appeals Telegram settings not configured');
+      throw new BadRequestException('Сервіс тимчасово недоступний. Спробуйте пізніше.');
+    }
+
+    // Send to Telegram
+    try {
+      await this.telegramService.sendAppealNotification(
+        providerInfo.telegramBotToken,
+        providerInfo.appealsTelegramChatId,
+        {
+          phoneNumber: normalizedPhone,
+          message: data.message,
+          ipAddress,
+        },
+      );
+
+      // Set cooldown in Redis (1 hour)
+      await this.cacheService.set(cooldownKey, true, this.APPEAL_COOLDOWN_TTL);
+
+      this.logger.log(`Appeal sent successfully for phone ${normalizedPhone}`);
+
+      return {
+        success: true,
+        message: 'Ваше звернення успішно відправлено. Ми зв\'яжемося з вами найближчим часом.',
+      };
+    } catch (error) {
+      this.logger.error(`Failed to send appeal: ${error.message}`, error.stack);
+      throw new BadRequestException('Не вдалося відправити звернення. Спробуйте пізніше.');
+    }
   }
 }

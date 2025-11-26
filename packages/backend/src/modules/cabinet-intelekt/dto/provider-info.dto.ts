@@ -190,3 +190,103 @@ export class ProviderInfoResponseDto {
   @ApiProperty({ description: 'Updated at', example: '2024-01-01T00:00:00Z' })
   updatedAt: Date;
 }
+
+export class ProviderContactsResponseDto {
+  @ApiProperty({
+    description: 'Phone numbers',
+    type: [ProviderPhoneDto],
+  })
+  phones: ProviderPhoneDto[];
+
+  @ApiProperty({
+    description: 'Email addresses',
+    type: [ProviderEmailDto],
+  })
+  emails: ProviderEmailDto[];
+
+  @ApiProperty({
+    description: 'Social media links',
+    type: [ProviderSocialMediaDto],
+  })
+  socialMedia: ProviderSocialMediaDto[];
+}
+
+export class ProviderCompanyResponseDto {
+  @ApiProperty({ description: 'Provider ID', example: 'uuid-here' })
+  id: string;
+
+  @ApiProperty({
+    description: 'Company name',
+    example: 'Internet Provider LLC',
+  })
+  companyName: string;
+
+  @ApiProperty({
+    description: 'Company description',
+    example: 'Leading internet provider in the region',
+    nullable: true,
+  })
+  description: string | null;
+
+  @ApiProperty({
+    description: 'Logo URL',
+    example: '/uploads/provider/logo.png',
+    nullable: true,
+  })
+  logoUrl: string | null;
+
+  @ApiProperty({
+    description: 'Website URL',
+    example: 'https://provider.com',
+    nullable: true,
+  })
+  website: string | null;
+
+  @ApiProperty({
+    description: 'Telegram bot username or link',
+    example: '@provider_bot',
+    nullable: true,
+  })
+  telegramBot: string | null;
+
+  @ApiProperty({
+    description: 'Working hours',
+    example: 'Mon-Fri: 9:00-18:00, Sat: 10:00-14:00',
+    nullable: true,
+  })
+  workingHours: string | null;
+
+  @ApiProperty({
+    description: 'Office address - street',
+    example: 'Main Street 123',
+    nullable: true,
+  })
+  addressStreet: string | null;
+
+  @ApiProperty({
+    description: 'Office address - city',
+    example: 'Kyiv',
+    nullable: true,
+  })
+  addressCity: string | null;
+
+  @ApiProperty({
+    description: 'Office address - postal code',
+    example: '01001',
+    nullable: true,
+  })
+  addressPostal: string | null;
+
+  @ApiProperty({
+    description: 'Office address - country',
+    example: 'Ukraine',
+    nullable: true,
+  })
+  addressCountry: string | null;
+
+  @ApiProperty({ description: 'Created at', example: '2024-01-01T00:00:00Z' })
+  createdAt: Date;
+
+  @ApiProperty({ description: 'Updated at', example: '2024-01-01T00:00:00Z' })
+  updatedAt: Date;
+}

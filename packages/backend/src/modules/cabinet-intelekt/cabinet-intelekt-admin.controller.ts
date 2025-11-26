@@ -984,4 +984,28 @@ export class CabinetIntelektAdminController {
   ): Promise<{ success: boolean; message: string }> {
     return this.service.testTelegramSettings(dto.botToken, dto.chatId);
   }
+
+  @Post('telegram-settings/test-appeals')
+  @ApiOperation({
+    summary: 'Test Appeals Telegram connection',
+    description: 'Send a test message to verify Telegram configuration for user appeals',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Test message sent successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Тестове повідомлення успішно відправлено' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Invalid Telegram configuration or connection failed' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async testAppealsSettings(
+    @Body() dto: TestTelegramSettingsDto,
+  ): Promise<{ success: boolean; message: string }> {
+    return this.service.testAppealsSettings(dto.botToken, dto.chatId);
+  }
 }
