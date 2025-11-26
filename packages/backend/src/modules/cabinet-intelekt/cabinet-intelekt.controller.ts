@@ -1,4 +1,5 @@
-import { Controller, Get, UseGuards, Query, Param } from '@nestjs/common';
+import { Controller, Get, Post, UseGuards, Query, Param, Body, Req, HttpCode, HttpStatus, SetMetadata } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -13,6 +14,8 @@ import {
   NewsResponseDto,
   NewsListResponseDto,
   NewsCategoryResponseDto,
+  ConnectionRequestResponseDto,
+  CreateConnectionRequestDto,
 } from './dto';
 import { ApiTokenGuard } from '../auth/guards/api-token.guard';
 import { ScopeGuard } from '../../common/guards/scope.guard';
@@ -20,6 +23,7 @@ import { RateLimitGuard } from '../../common/guards/rate-limit.guard';
 import { EndpointAccessGuard } from '../../common/guards/endpoint-access.guard';
 import { RequireScopes } from '../../common/decorators/require-scopes.decorator';
 import { ApiScope } from '../../common/constants/scopes.constants';
+import { Public } from '../../common/decorators/public.decorator';
 
 /**
  * Public Cabinet Intelekt Controller
@@ -211,5 +215,40 @@ export class CabinetIntelektController {
       console.error('Failed to increment news views:', err);
     });
     return news;
+  }
+
+  @Post('connection-requests')
+  @Public() // Make this endpoint public (no API token required)
+  @HttpCode(HttpStatus.CREATED)
+  @Throttle({ default: { limit: 5, ttl: 3600000 } }) // 5 requests per hour per IP
+  @ApiOperation({
+    summary: 'Create connection request (public endpoint)',
+    description:
+      'Allows website visitors to submit connection requests with their full name and phone number. Rate limited to 5 requests per hour per IP address. Anti-spam protection: blocks duplicate requests from the same phone number within 24 hours. No authentication required.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Connection request created successfully',
+    type: ConnectionRequestResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid input data (phone number format, name validation)',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Duplicate request: an active request with this phone number already exists',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests: rate limit exceeded (IP-based or phone-based cooldown)',
+  })
+  async createConnectionRequest(
+    @Body() dto: CreateConnectionRequestDto,
+    @Req() req: any,
+  ): Promise<ConnectionRequestResponseDto> {
+    const ipAddress = (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
+    const userAgent = req.headers['user-agent'];
+    return await this.service.createConnectionRequest(dto, ipAddress, userAgent);
   }
 }

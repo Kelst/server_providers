@@ -1,13 +1,27 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../modules/database/prisma.service';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 @Injectable()
 export class EndpointAccessGuard implements CanActivate {
   private readonly logger = new Logger(EndpointAccessGuard.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private reflector: Reflector,
+    private prisma: PrismaService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // Skip endpoint access check for public endpoints
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
+    }
+
     const request = context.switchToHttp().getRequest();
     const token = request.user; // Token object set by ApiTokenGuard
 

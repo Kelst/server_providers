@@ -7,6 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { SCOPES_KEY } from '../decorators/require-scopes.decorator';
 import { ApiScope } from '../constants/scopes.constants';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 /**
  * Guard that checks if the API token has required scopes
@@ -26,6 +27,15 @@ export class ScopeGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
+    // Skip scope check if endpoint is public
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
+    }
+
     const requiredScopes = this.reflector.getAllAndOverride<ApiScope[]>(
       SCOPES_KEY,
       [context.getHandler(), context.getClass()],

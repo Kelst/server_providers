@@ -7,3 +7,4 @@ export * from './social-media.dto';
 export * from './video.dto';
 export * from './audit-log-response.dto';
 export * from './news';
+export * from './connection-request.dto';

@@ -19,6 +19,12 @@ import {
   CreateSocialMediaDto,
   UpdateSocialMediaDto,
   AuditLogResponseDto,
+  CreateConnectionRequestDto,
+  UpdateConnectionRequestDto,
+  ConnectionRequestResponseDto,
+  ConnectionRequestListQueryDto,
+  ConnectionRequestListResponseDto,
+  TelegramSettingsDto,
 } from './dto';
 import { CreateVideoDto, UpdateVideoDto, VideoResponseDto } from './dto/video.dto';
 import {
@@ -30,12 +36,16 @@ import * as fs from 'fs';
 import { existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import * as path from 'path';
+import { TelegramService } from './services/telegram.service';
 
 @Injectable()
 export class CabinetIntelektService {
   private readonly logger = new Logger(CabinetIntelektService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly telegramService: TelegramService,
+  ) {}
 
   /**
    * Get provider information (public method for mobile apps)
@@ -1482,5 +1492,240 @@ export class CabinetIntelektService {
     this.logger.debug(
       `News audit log created: ${data.action} for news ${data.newsId} by ${data.adminId}`,
     );
+  }
+
+  // ==================== CONNECTION REQUESTS ====================
+
+  /**
+   * Create connection request (public API)
+   */
+  async createConnectionRequest(
+    data: CreateConnectionRequestDto,
+    ipAddress: string,
+    userAgent?: string,
+  ): Promise<ConnectionRequestResponseDto> {
+    this.logger.debug(`Creating connection request from ${data.fullName}`);
+
+    // Normalize phone number to +380XXXXXXXXX format
+    const { normalizePhoneNumber } = await import('./utils/phone.utils');
+    const normalizedPhone = normalizePhoneNumber(data.phoneNumber);
+
+    // Check for any request within last 24 hours (cooldown period)
+    const twentyFourHoursAgo = new Date();
+    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+
+    const recentRequest = await this.prisma.connectionRequest.findFirst({
+      where: {
+        phoneNumber: normalizedPhone,
+        createdAt: {
+          gte: twentyFourHoursAgo,
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    if (recentRequest) {
+      const hoursLeft = Math.ceil(
+        (recentRequest.createdAt.getTime() + 24 * 60 * 60 * 1000 - Date.now()) /
+          (1000 * 60 * 60),
+      );
+      throw new HttpException(
+        `Ви вже залишали заявку. Спробуйте через ${hoursLeft} год.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const request = await this.prisma.connectionRequest.create({
+      data: {
+        fullName: data.fullName,
+        phoneNumber: normalizedPhone,
+        comment: data.comment,
+        ipAddress,
+        userAgent,
+      },
+    });
+
+    // Send Telegram notification
+    try {
+      const providerInfo = await this.prisma.providerInfo.findFirst();
+      if (
+        providerInfo?.telegramNotificationsEnabled &&
+        providerInfo.telegramBotToken &&
+        providerInfo.telegramChatId
+      ) {
+        await this.telegramService.sendConnectionRequestNotification(
+          providerInfo.telegramBotToken,
+          providerInfo.telegramChatId,
+          request,
+        );
+        await this.prisma.connectionRequest.update({
+          where: { id: request.id },
+          data: {
+            telegramSent: true,
+            telegramSentAt: new Date(),
+          },
+        });
+      }
+    } catch (error) {
+      this.logger.error(`Failed to send Telegram notification: ${error.message}`);
+    }
+
+    return request;
+  }
+
+  /**
+   * Get connection requests list (admin API)
+   */
+  async getConnectionRequests(
+    query: ConnectionRequestListQueryDto,
+  ): Promise<ConnectionRequestListResponseDto> {
+    const { search, dateFrom, dateTo, sortBy = 'createdAt', sortOrder = 'desc' } = query;
+    const page = parseInt(query.page as any) || 1;
+    const limit = parseInt(query.limit as any) || 20;
+
+    const where: any = {};
+
+    if (search) {
+      where.OR = [
+        { fullName: { contains: search, mode: 'insensitive' } },
+        { phoneNumber: { contains: search } },
+      ];
+    }
+
+    if (dateFrom || dateTo) {
+      where.createdAt = {};
+      if (dateFrom) where.createdAt.gte = new Date(dateFrom);
+      if (dateTo) where.createdAt.lte = new Date(dateTo);
+    }
+
+    const [requests, total] = await Promise.all([
+      this.prisma.connectionRequest.findMany({
+        where,
+        orderBy: { [sortBy]: sortOrder },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.connectionRequest.count({ where }),
+    ]);
+
+    return {
+      data: requests,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
+   * Get connection request by ID (admin API)
+   */
+  async getConnectionRequestById(id: string): Promise<ConnectionRequestResponseDto> {
+    const request = await this.prisma.connectionRequest.findUnique({
+      where: { id },
+    });
+
+    if (!request) {
+      throw new NotFoundException(`Connection request with ID ${id} not found`);
+    }
+
+    return request;
+  }
+
+  /**
+   * Update connection request (admin API)
+   */
+  async updateConnectionRequest(
+    id: string,
+    data: UpdateConnectionRequestDto,
+    adminId: string,
+  ): Promise<ConnectionRequestResponseDto> {
+    const request = await this.prisma.connectionRequest.findUnique({ where: { id } });
+
+    if (!request) {
+      throw new NotFoundException(`Connection request with ID ${id} not found`);
+    }
+
+    const updated = await this.prisma.connectionRequest.update({
+      where: { id },
+      data: data,
+    });
+
+    this.logger.debug(`Connection request ${id} updated by admin ${adminId}`);
+    return updated;
+  }
+
+  /**
+   * Delete connection request (admin API)
+   */
+  async deleteConnectionRequest(id: string): Promise<void> {
+    const request = await this.prisma.connectionRequest.findUnique({ where: { id } });
+
+    if (!request) {
+      throw new NotFoundException(`Connection request with ID ${id} not found`);
+    }
+
+    await this.prisma.connectionRequest.delete({ where: { id } });
+    this.logger.debug(`Connection request ${id} deleted`);
+  }
+
+  // ==================== TELEGRAM SETTINGS ====================
+
+  /**
+   * Get Telegram settings
+   */
+  async getTelegramSettings(): Promise<TelegramSettingsDto> {
+    const providerInfo = await this.prisma.providerInfo.findFirst();
+
+    if (!providerInfo) {
+      return {
+        telegramBotToken: undefined,
+        telegramChatId: undefined,
+        telegramNotificationsEnabled: false,
+      };
+    }
+
+    return {
+      telegramBotToken: providerInfo.telegramBotToken || undefined,
+      telegramChatId: providerInfo.telegramChatId || undefined,
+      telegramNotificationsEnabled: providerInfo.telegramNotificationsEnabled,
+    };
+  }
+
+  /**
+   * Update Telegram settings
+   */
+  async updateTelegramSettings(data: TelegramSettingsDto): Promise<TelegramSettingsDto> {
+    const providerInfo = await this.prisma.providerInfo.findFirst();
+
+    if (!providerInfo) {
+      throw new NotFoundException('Provider info not found. Create provider info first.');
+    }
+
+    const updated = await this.prisma.providerInfo.update({
+      where: { id: providerInfo.id },
+      data: {
+        telegramBotToken: data.telegramBotToken,
+        telegramChatId: data.telegramChatId,
+        telegramNotificationsEnabled: data.telegramNotificationsEnabled ?? false,
+      },
+    });
+
+    this.logger.debug('Telegram settings updated');
+
+    return {
+      telegramBotToken: updated.telegramBotToken || undefined,
+      telegramChatId: updated.telegramChatId || undefined,
+      telegramNotificationsEnabled: updated.telegramNotificationsEnabled,
+    };
+  }
+
+  /**
+   * Test Telegram settings
+   */
+  async testTelegramSettings(botToken: string, chatId: string): Promise<{ success: boolean; message: string }> {
+    return await this.telegramService.testTelegramConnection(botToken, chatId);
   }
 }

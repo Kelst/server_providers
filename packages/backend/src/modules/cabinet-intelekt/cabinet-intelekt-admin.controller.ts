@@ -42,6 +42,11 @@ import {
   CreateSocialMediaDto,
   UpdateSocialMediaDto,
   AuditLogResponseDto,
+  ConnectionRequestResponseDto,
+  ConnectionRequestListResponseDto,
+  UpdateConnectionRequestDto,
+  TelegramSettingsDto,
+  TestTelegramSettingsDto,
 } from './dto';
 import { CreateVideoDto, UpdateVideoDto, VideoResponseDto } from './dto/video.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -833,5 +838,150 @@ export class CabinetIntelektAdminController {
   ) {
     await this.service.deleteNewsCoverImage(id, req.user.id);
     return { message: 'Cover image deleted successfully' };
+  }
+
+  // ========================================
+  // Connection Requests Management
+  // ========================================
+
+  @Get('connection-requests')
+  @ApiOperation({
+    summary: 'Get connection requests',
+    description: 'Retrieve paginated list of connection requests with filters',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 20)' })
+  @ApiQuery({ name: 'status', required: false, enum: ['PENDING', 'CONTACTED', 'COMPLETED', 'REJECTED'], description: 'Filter by status' })
+  @ApiQuery({ name: 'search', required: false, type: String, description: 'Search by name or phone' })
+  @ApiQuery({ name: 'telegramSent', required: false, type: Boolean, description: 'Filter by Telegram sent status' })
+  @ApiQuery({ name: 'sortBy', required: false, type: String, description: 'Sort field (default: createdAt)' })
+  @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'], description: 'Sort order (default: desc)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Connection requests retrieved successfully',
+    type: ConnectionRequestListResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getConnectionRequests(@Query() query: any): Promise<ConnectionRequestListResponseDto> {
+    return this.service.getConnectionRequests(query);
+  }
+
+  @Get('connection-requests/:id')
+  @ApiOperation({
+    summary: 'Get connection request by ID',
+    description: 'Retrieve single connection request details',
+  })
+  @ApiParam({ name: 'id', description: 'Connection request ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Connection request retrieved successfully',
+    type: ConnectionRequestResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Connection request not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getConnectionRequestById(@Param('id') id: string): Promise<ConnectionRequestResponseDto> {
+    return this.service.getConnectionRequestById(id);
+  }
+
+  @Put('connection-requests/:id')
+  @ApiOperation({
+    summary: 'Update connection request',
+    description: 'Update connection request status and notes',
+  })
+  @ApiParam({ name: 'id', description: 'Connection request ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Connection request updated successfully',
+    type: ConnectionRequestResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Connection request not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async updateConnectionRequest(
+    @Param('id') id: string,
+    @Body() dto: UpdateConnectionRequestDto,
+    @Request() req,
+  ): Promise<ConnectionRequestResponseDto> {
+    const adminId = req.user.id;
+    return this.service.updateConnectionRequest(id, dto, adminId);
+  }
+
+  @Delete('connection-requests/:id')
+  @ApiOperation({
+    summary: 'Delete connection request',
+    description: 'Delete connection request permanently',
+  })
+  @ApiParam({ name: 'id', description: 'Connection request ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Connection request deleted successfully',
+    schema: { type: 'object', properties: { message: { type: 'string' } } },
+  })
+  @ApiResponse({ status: 404, description: 'Connection request not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async deleteConnectionRequest(@Param('id') id: string) {
+    await this.service.deleteConnectionRequest(id);
+    return { message: 'Connection request deleted successfully' };
+  }
+
+  // ========================================
+  // Telegram Settings Management
+  // ========================================
+
+  @Get('telegram-settings')
+  @ApiOperation({
+    summary: 'Get Telegram settings',
+    description: 'Retrieve Telegram bot configuration for notifications',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Telegram settings retrieved successfully',
+    type: TelegramSettingsDto,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'Provider information not found' })
+  async getTelegramSettings(): Promise<TelegramSettingsDto> {
+    return this.service.getTelegramSettings();
+  }
+
+  @Put('telegram-settings')
+  @ApiOperation({
+    summary: 'Update Telegram settings',
+    description: 'Update Telegram bot token, chat ID, and notification preferences',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Telegram settings updated successfully',
+    type: TelegramSettingsDto,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'Provider information not found' })
+  async updateTelegramSettings(
+    @Body() dto: TelegramSettingsDto,
+  ): Promise<TelegramSettingsDto> {
+    return this.service.updateTelegramSettings(dto);
+  }
+
+  @Post('telegram-settings/test')
+  @ApiOperation({
+    summary: 'Test Telegram connection',
+    description: 'Send a test message to verify Telegram bot configuration',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Test message sent successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Тестове повідомлення успішно відправлено в Telegram' },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Invalid Telegram configuration or connection failed' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async testTelegramSettings(
+    @Body() dto: TestTelegramSettingsDto,
+  ): Promise<{ success: boolean; message: string }> {
+    return this.service.testTelegramSettings(dto.botToken, dto.chatId);
   }
 }

@@ -3,6 +3,7 @@ import { MulterModule } from '@nestjs/platform-express';
 import { CabinetIntelektController } from './cabinet-intelekt.controller';
 import { CabinetIntelektAdminController } from './cabinet-intelekt-admin.controller';
 import { CabinetIntelektService } from './cabinet-intelekt.service';
+import { TelegramService } from './services/telegram.service';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
 import { existsSync, mkdirSync } from 'fs';
@@ -35,8 +36,11 @@ if (!existsSync(newsDir)) {
       dest: uploadsDir,
     }),
   ],
-  controllers: [CabinetIntelektController, CabinetIntelektAdminController],
-  providers: [CabinetIntelektService],
+  controllers: [
+    CabinetIntelektController,
+    CabinetIntelektAdminController,
+  ],
+  providers: [CabinetIntelektService, TelegramService],
   exports: [CabinetIntelektService],
 })
 export class CabinetIntelektModule {}

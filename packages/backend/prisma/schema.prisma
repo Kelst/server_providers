@@ -586,6 +586,11 @@ model ProviderInfo {
   addressPostal    String?  @map("address_postal") @db.VarChar(20)
   addressCountry   String?  @map("address_country") @db.VarChar(100)
 
+  // Telegram Notifications for Connection Requests
+  telegramBotToken              String?  @map("telegram_bot_token") @db.VarChar(500)
+  telegramChatId                String?  @map("telegram_chat_id") @db.VarChar(100)
+  telegramNotificationsEnabled  Boolean  @default(false) @map("telegram_notifications_enabled")
+
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
@@ -809,5 +814,26 @@ model NewsAuditLog {
   @@index([createdAt])
   @@index([action])
   @@map("news_audit_log")
+}
+
+// Connection Requests (заявки на підключення від абонентів)
+model ConnectionRequest {
+  id            String    @id @default(uuid())
+  fullName      String    @map("full_name") @db.VarChar(200)
+  phoneNumber   String    @map("phone_number") @db.VarChar(20)
+  comment       String?   @db.Text // Коментар користувача при створенні заявки
+  notes         String?   @db.Text // Внутрішні примітки адміністратора
+  ipAddress     String    @map("ip_address") @db.VarChar(45)
+  userAgent     String?   @map("user_agent") @db.Text
+  telegramSent  Boolean   @default(false) @map("telegram_sent")
+  telegramSentAt DateTime? @map("telegram_sent_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([phoneNumber])
+  @@index([phoneNumber, createdAt])
+  @@index([createdAt])
+  @@index([telegramSent])
+  @@map("connection_requests")
 }
 

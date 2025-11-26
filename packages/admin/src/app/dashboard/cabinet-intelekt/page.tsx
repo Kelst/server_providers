@@ -14,10 +14,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useCabinetIntelektStore } from '@/lib/stores/cabinetIntelektStore';
 import { ProviderPhoneType, ProviderEmailType, ProviderSocialPlatform } from '@/lib/api/cabinetIntelektApi';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Save, Upload, Trash2, Plus, Edit, Building2, Phone, Mail, Share2, History, Video, Play, Eye, Newspaper, FolderTree } from 'lucide-react';
+import { Loader2, Save, Upload, Trash2, Plus, Edit, Building2, Phone, Mail, Share2, History, Video, Play, Eye, Newspaper, FolderTree, MessageSquare, Settings } from 'lucide-react';
 import { format } from 'date-fns';
 import { NewsManagement } from '@/components/news/NewsManagement';
 import { NewsCategoryManagement } from '@/components/news/NewsCategoryManagement';
+import { ConnectionRequests } from '@/components/cabinet-intelekt/ConnectionRequests';
+import { TelegramSettings } from '@/components/cabinet-intelekt/TelegramSettings';
 
 // Backend base URL for static files
 const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3000';
@@ -603,6 +605,14 @@ export default function CabinetIntelektPage() {
             <TabsTrigger value="news-categories">
               <FolderTree className="h-4 w-4 mr-2" />
               News Categories
+            </TabsTrigger>
+            <TabsTrigger value="connection-requests">
+              <MessageSquare className="h-4 w-4 mr-2" />
+              Connection Requests
+            </TabsTrigger>
+            <TabsTrigger value="telegram">
+              <Settings className="h-4 w-4 mr-2" />
+              Telegram Settings
             </TabsTrigger>
             <TabsTrigger value="audit" onClick={handleLoadAuditLogs}>
               <History className="h-4 w-4 mr-2" />
@@ -1535,6 +1545,16 @@ export default function CabinetIntelektPage() {
           {/* News Categories Tab */}
           <TabsContent value="news-categories">
             <NewsCategoryManagement />
+          </TabsContent>
+
+          {/* Connection Requests Tab */}
+          <TabsContent value="connection-requests">
+            <ConnectionRequests />
+          </TabsContent>
+
+          {/* Telegram Settings Tab */}
+          <TabsContent value="telegram">
+            <TelegramSettings />
           </TabsContent>
 
           {/* Audit Logs Tab */}

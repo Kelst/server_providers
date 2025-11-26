@@ -283,6 +283,66 @@ export interface NewsListResponse {
   totalPages: number;
 }
 
+// Connection Request Types
+export type ConnectionRequestStatus = 'PENDING' | 'CONTACTED' | 'COMPLETED' | 'REJECTED';
+
+export interface ConnectionRequest {
+  id: string;
+  fullName: string;
+  phoneNumber: string;
+  status: ConnectionRequestStatus;
+  notes?: string;
+  ipAddress: string;
+  userAgent?: string;
+  telegramSent: boolean;
+  telegramSentAt?: string;
+  processedBy?: string;
+  processedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  processor?: {
+    id: string;
+    email: string;
+    firstName?: string;
+    lastName?: string;
+  };
+}
+
+export interface UpdateConnectionRequestRequest {
+  status?: ConnectionRequestStatus;
+  notes?: string;
+}
+
+export interface ConnectionRequestListQuery {
+  page?: number;
+  limit?: number;
+  status?: ConnectionRequestStatus;
+  search?: string;
+  telegramSent?: boolean;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface ConnectionRequestListResponse {
+  data: ConnectionRequest[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+// Telegram Settings Types
+export interface TelegramSettings {
+  telegramBotToken?: string | null;
+  telegramChatId?: string | null;
+  telegramNotificationsEnabled: boolean;
+}
+
+export interface TestTelegramSettingsRequest {
+  botToken: string;
+  chatId: string;
+}
+
 export const cabinetIntelektApi = {
   // Provider Info Management
   async getInfo(): Promise<ProviderInfo> {
@@ -478,5 +538,50 @@ export const cabinetIntelektApi = {
 
   async deleteNewsCover(id: string): Promise<void> {
     await apiClient.delete(`/admin/cabinet-intelekt/news/${id}/cover`);
+  },
+
+  // ========================================
+  // Connection Requests
+  // ========================================
+
+  async getConnectionRequests(params?: ConnectionRequestListQuery): Promise<ConnectionRequestListResponse> {
+    const { data } = await apiClient.get<ConnectionRequestListResponse>('/admin/cabinet-intelekt/connection-requests', { params });
+    return data;
+  },
+
+  async getConnectionRequestById(id: string): Promise<ConnectionRequest> {
+    const { data} = await apiClient.get<ConnectionRequest>(`/admin/cabinet-intelekt/connection-requests/${id}`);
+    return data;
+  },
+
+  async updateConnectionRequest(id: string, requestData: UpdateConnectionRequestRequest): Promise<ConnectionRequest> {
+    const { data } = await apiClient.put<ConnectionRequest>(`/admin/cabinet-intelekt/connection-requests/${id}`, requestData);
+    return data;
+  },
+
+  async deleteConnectionRequest(id: string): Promise<void> {
+    await apiClient.delete(`/admin/cabinet-intelekt/connection-requests/${id}`);
+  },
+
+  // ========================================
+  // Telegram Settings
+  // ========================================
+
+  async getTelegramSettings(): Promise<TelegramSettings> {
+    const { data } = await apiClient.get<TelegramSettings>('/admin/cabinet-intelekt/telegram-settings');
+    return data;
+  },
+
+  async updateTelegramSettings(settings: TelegramSettings): Promise<TelegramSettings> {
+    const { data } = await apiClient.put<TelegramSettings>('/admin/cabinet-intelekt/telegram-settings', settings);
+    return data;
+  },
+
+  async testTelegramSettings(testData: TestTelegramSettingsRequest): Promise<{ success: boolean; message: string }> {
+    const { data } = await apiClient.post<{ success: boolean; message: string }>(
+      '/admin/cabinet-intelekt/telegram-settings/test',
+      testData
+    );
+    return data;
   },
 };

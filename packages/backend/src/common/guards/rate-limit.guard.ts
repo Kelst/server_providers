@@ -6,8 +6,10 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { RateLimitService } from '../services/rate-limit.service';
 import { PrismaService } from '../../modules/database/prisma.service';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 /**
  * Guard that enforces per-token rate limiting
@@ -26,11 +28,21 @@ export class RateLimitGuard implements CanActivate {
   private readonly logger = new Logger(RateLimitGuard.name);
 
   constructor(
+    private readonly reflector: Reflector,
     private readonly rateLimitService: RateLimitService,
     private readonly prisma: PrismaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // Skip rate limiting for public endpoints
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
+    }
+
     const request = context.switchToHttp().getRequest();
     const response = context.switchToHttp().getResponse();
     const apiToken = request.user; // Set by ApiTokenGuard
